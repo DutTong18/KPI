@@ -1,0 +1,129 @@
+import ExcelJS from "exceljs";
+import path from "path";
+
+interface TableColumn {
+  name: string;
+  filterButton?: boolean;
+  totalsRowLabel?: string;
+  totalsRowFunction?: string;
+}
+
+interface TableOptions {
+  /** Name of the sheet to add the table to */
+  sheetName: string;
+  /** Display name for the table (no spaces) */
+  tableName: string;
+  /** Top-left cell reference, e.g. "A1" */
+  ref: string;
+  /** Column definitions */
+  columns: TableColumn[];
+  /** Row data — each item maps column name → cell value */
+  rows: Record<string, ExcelJS.CellValue>[];
+  /** Show a totals row at the bottom (default: false) */
+  totalsRow?: boolean;
+  /** Built-in table style, e.g. "TableStyleMedium9" (default: "TableStyleMedium2") */
+  style?: string;
+}
+
+/**
+ * Adds a formatted Excel table to the specified sheet in a workbook.
+ *
+ * @param workbook  An ExcelJS Workbook (new or loaded).
+ * @param options   Table configuration (sheet, name, position, columns, rows).
+ * @returns         The sheet the table was written to.
+ */
+export function createTable(
+  workbook: ExcelJS.Workbook,
+  options: TableOptions
+): ExcelJS.Worksheet {
+  const {
+    sheetName,
+    tableName,
+    ref,
+    columns,
+    rows,
+    totalsRow = false,
+    style = "TableStyleMedium2",
+  } = options;
+
+  // Get or create the sheet
+  let sheet = workbook.getWorksheet(sheetName);
+  if (!sheet) {
+    sheet = workbook.addWorksheet(sheetName);
+  }
+
+  // Map rows from { columnName: value } to ordered arrays
+  const tableRows = rows.map((row) => columns.map((col) => row[col.name] ?? null));
+
+  sheet.addTable({
+    name: tableName,
+    ref,
+    headerRow: true,
+    totalsRow,
+    style: {
+      theme: style,
+      showRowStripes: true,
+    },
+    columns: columns.map((col) => ({
+      name: col.name,
+      filterButton: col.filterButton ?? true,
+      ...(totalsRow && col.totalsRowLabel
+        ? { totalsRowLabel: col.totalsRowLabel }
+        : {}),
+      ...(totalsRow && col.totalsRowFunction
+        ? { totalsRowFunction: col.totalsRowFunction }
+        : {}),
+    })),
+    rows: tableRows,
+  });
+
+  // Auto-fit column widths based on content
+  sheet.columns.forEach((col) => {
+    if (!col) return;
+    let maxLen = 10;
+    col.eachCell?.({ includeEmpty: false }, (cell) => {
+      const val = cell.value?.toString() ?? "";
+      if (val.length > maxLen) maxLen = val.length;
+    });
+    col.width = maxLen + 4;
+  });
+
+  return sheet;
+}
+
+// ── Demo ──────────────────────────────────────────────────────────────────────
+async function main() {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "createTable.ts";
+
+  createTable(workbook, {
+    sheetName: "Sales",
+    tableName: "SalesData",
+    ref: "A1",
+    totalsRow: true,
+    style: "TableStyleMedium9",
+    columns: [
+      { name: "Product" },
+      { name: "Region" },
+      { name: "Q1 Sales", totalsRowFunction: "sum" },
+      { name: "Q2 Sales", totalsRowFunction: "sum" },
+      { name: "Growth %", totalsRowLabel: "—" },
+    ],
+    rows: [
+      { Product: "Widget A", Region: "North", "Q1 Sales": 12400, "Q2 Sales": 15800, "Growth %": "27.4%" },
+      { Product: "Widget B", Region: "South", "Q1 Sales": 9800,  "Q2 Sales": 11200, "Growth %": "14.3%" },
+      { Product: "Gadget X", Region: "East",  "Q1 Sales": 21000, "Q2 Sales": 19500, "Growth %": "-7.1%" },
+      { Product: "Gadget Y", Region: "West",  "Q1 Sales": 7300,  "Q2 Sales": 8900,  "Growth %": "21.9%" },
+      { Product: "Doohickey", Region: "North", "Q1 Sales": 4500, "Q2 Sales": 5100,  "Growth %": "13.3%" },
+    ],
+  });
+
+  const outPath = path.join("output.xlsx");
+  await workbook.xlsx.writeFile(outPath);
+  console.log(`Saved → ${outPath}`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
