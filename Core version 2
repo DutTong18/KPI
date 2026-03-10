@@ -1,0 +1,19 @@
+function main(workbook: ExcelScript.Workbook)
+{
+  // setting 
+
+  //get the "Stope Cadence" worksheet from the workbook
+  let dataworksheet = workbook.getWorksheet("Stope Cadence");
+
+  //RedBlack stope count 
+  do{
+
+  } while (livecell = true);
+
+  //get the "Scheduler Data" worksheet from the workbook
+let tableworksheet = workbook.getWorksheet("SchedulerData");
+
+// copying data from "Stope Cadence" to "SchedulerData"
+
+
+}
