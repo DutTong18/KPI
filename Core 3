@@ -65,11 +65,20 @@ function main(workbook: ExcelScript.Workbook)
   //const sourceTable = workbook(SourceSheet).getTable(TargetTableName);
   //const targetTable = workbook(TargetSheet).getTable(SourceTableName);
 
+
+  //getting and showing current table filters
   const TableFilters = {};
   S_table.getColumns().forEach ((column) => {
     let COlFilterCriteria = column.getFilter().getCriteria();
     TableFilters[column.getName()] = COlFilterCriteria;
   })
-  console.log(TableFilters)
+  console.log(TableFilters)//showing table filters for testing. 
+
+  // getting range
+  const S_Range = S_table.getRangeBetweenHeaderAndTotal();
+  const DataRows = S_Range.getValues();
+  const RowsToMoveValues: (number | string | boolean)[][] = [];
+  
+
 
 }
