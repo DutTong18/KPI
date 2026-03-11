@@ -91,6 +91,17 @@ function main(workbook: ExcelScript.Workbook)
   console.log(RowsToMoveValues); //checking the correct rows are moved
   console.log(RowsAddressToRemove); //****Is redundant**** for testing only
 
+  //getting values from source Table ***Check that it is retrieving the data from the stope  Cadence sheet***
+  for (let j = 0; j < DataRows.length; j++) {
+    if (DataRows[j][IndexOfZoneStatus] === CountToFilterOn2) {
+      RowsToMoveValues.push(DataRows[j]);
+      let Address2 = S_Range.getIntersection(S_Range.getCell(j, 0).getEntireRow()).getAddress();
+      RowsAddressToRemove.push(Address2);//****Is redundant**** for testing only
+    }
+  }
+  console.log(RowsToMoveValues); //checking the correct rows are moved
+  console.log(RowsAddressToRemove); //****Is redundant**** for testing only
+
   //check if no valid rows exist
   if(RowsToMoveValues.length < 1){
     console.log("No rows selected");
