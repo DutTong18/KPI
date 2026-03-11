@@ -4,8 +4,8 @@ function main(workbook: ExcelScript.Workbook)
   //setting sheet names (to awssist with active sheets and sheet to build the table in)  
   const SourceSheet = "Stope Cadence";
   const TargetSheet = "SchedulerData";
-  const SourceTableName = "Table1";
-  const TargetTableName = "Table1"; //check table names in excel 
+  const SourceTableName = "Table2";
+  const TargetTableName = "KPI"; //check table names in excel 
 
   // initialising column filtering name 
   const NameOfColumnToFilterOn = "Zone";
@@ -22,6 +22,16 @@ function main(workbook: ExcelScript.Workbook)
   const CountToFilterOn2 = "RED";
   const CountToFilterOn3 = "YELLOW";
   const CountToFilterOn4 = "GREEN";
+
+  const sheet = workbook.getWorksheet(SourceSheet);
+  let selectedSheet = workbook.getWorksheet(TargetSheet);
+
+  //sorting the data 
+  //table.getSort().apply([{ key: 3, ascending: true }]);
+
+  //adding the table and changing name *****Edit Name Later*****
+  let table = selectedSheet.addTable("A5:AI99", true);
+  table.setName("KPI");
 
   // Get the source worksheet
   const S_sheet = workbook.getWorksheet(SourceSheet);
@@ -54,21 +64,5 @@ function main(workbook: ExcelScript.Workbook)
   //getting table object reference
   //const sourceTable = workbook(SourceSheet).getTable(TargetTableName);
   //const targetTable = workbook(TargetSheet).getTable(SourceTableName);
-
-
-
-
-  const sheet = workbook.getWorksheet(SourceSheet);
-  let selectedSheet = workbook.getWorksheet(TargetSheet);
-
-  //adding the table
-  let table = selectedSheet.addTable("A5:AI99", true);
-  
-  
-  
-  
-  //sorting the data 
-  table.getSort().apply([{key: 3, ascending: true}]);
-
 
 }
