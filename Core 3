@@ -78,7 +78,11 @@ function main(workbook: ExcelScript.Workbook)
   const S_Range = S_table.getRangeBetweenHeaderAndTotal();
   const DataRows = S_Range.getValues();
   const RowsToMoveValues: (number | string | boolean)[][] = [];
-  
 
-
+  //getting values from source Table ***Check that it is retrieving the data from the stope  Cadence sheet***
+  for (let i=0; i < DataRows.length; i++){
+    if (DataRows[i][IndexOfZoneStatus] === CountToFilterOn){
+      RowsToMoveValues.push(DataRows[i]);
+    }
+  }
 }
