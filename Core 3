@@ -78,11 +78,16 @@ function main(workbook: ExcelScript.Workbook)
   const S_Range = S_table.getRangeBetweenHeaderAndTotal();
   const DataRows = S_Range.getValues();
   const RowsToMoveValues: (number | string | boolean)[][] = [];
+  const RowsAddressToRemove: string[] = []; //****Is redundant**** for testing only
 
   //getting values from source Table ***Check that it is retrieving the data from the stope  Cadence sheet***
   for (let i=0; i < DataRows.length; i++){
     if (DataRows[i][IndexOfZoneStatus] === CountToFilterOn){
       RowsToMoveValues.push(DataRows[i]);
+      let Address = S_Range.getIntersection(S_Range.getCell(i,0).getEntireRow()).getAddress();
+      RowsAddressToRemove.push(Address);//****Is redundant**** for testing only
     }
   }
+  console.log(RowsToMoveValues); //checking the correct rows are moved
+  console.log(RowsAddressToRemove); //****Is redundant**** for testing only
 }
