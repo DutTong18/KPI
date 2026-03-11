@@ -1,0 +1,62 @@
+/**
+ * This script creates a sorted table and highlights a couple rows to demonstrate formatting.
+ * This script does not affect any pre-existing data in the workbook.
+ *
+ * This sample is based off this Office Scripts tutorial:
+ * https://docs.microsoft.com/office/dev/scripts/tutorials/excel-tutorial
+ */
+function main(workbook: ExcelScript.Workbook) {
+  // Add a sample worksheet with sample data.
+  let sampleSheet = addSampleSheet(workbook);
+
+  /*****************************
+   * Begin Create Table sample *
+   *****************************/
+
+  // Set fill color to FFC000 (the hex value for orange).
+  sampleSheet.getRange("A2:C2").getFormat().getFill().setColor("FFC000");
+
+  // Set fill color to yellow using the string literal.
+  sampleSheet.getRange("A3:C3").getFormat().getFill().setColor("yellow");
+
+  // Create a table using the data range.
+  let newTable = workbook.addTable(sampleSheet.getRange("A1:C5"), true);
+
+  // Sort the table based on the first column.
+  newTable.getSort().apply([
+    {
+      key: 0 /* '0' refers to the index, not the column name. */,
+      ascending: true,
+    },
+  ]);
+}
+
+/*
+ * This setup function is only for the sample.
+ * It creates a new worksheet with sample data,
+ * separate from anything that you're working on.
+ *
+ * @param workbook - The currently open workbook.
+ * @returns - A new worksheet with the sample data.
+ */
+function addSampleSheet(
+  workbook: ExcelScript.Workbook
+): ExcelScript.Worksheet {
+  // Create a new worksheet.
+  let sheet = workbook.addWorksheet();
+  // Switch to the new worksheet.
+  sheet.activate();
+
+  // Add sample data.
+  let range = sheet.getRange("A1:C5");
+  range.setValues([
+    ["Fruit", "2018", "2019"],
+    ["Oranges", "1000", "1200"],
+    ["Lemons", "800", "900"],
+    ["Limes", "600", "500"],
+    ["Grapefruits", "900", "700"],
+  ]);
+  range.select();
+
+  return sheet;
+}
