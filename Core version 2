@@ -1,19 +1,43 @@
 function main(workbook: ExcelScript.Workbook)
 {
-  // setting 
+  //initialising variables 
+  //setting sheet names (to awssist with active sheets and sheet to build the table in)  
+  const sourceSheet = "Stope Cadence";
+  const targetSheet = "SchedulerData";
 
-  //get the "Stope Cadence" worksheet from the workbook
-  let dataworksheet = workbook.getWorksheet("Stope Cadence");
+  // initialising column filtering name 
+  const NameOfColumnToFilterOn = "Zone";
 
-  //RedBlack stope count 
-  do{
+  //lookub column index (possibly maske dynamic later once running)
+  const indexOfIdStope = 2;
+  const indexOfUser = 7;
+  const indexOfDesignStage = 21;
+  const indexOfSubProcess = 22;
+  const indexOfZoneStatus = 34;
 
-  } while (livecell = true);
+  //values to filter for (currently will only use black and red will use other values iff required from feedback) 
+  const CountToFilterOn = "BLACK";
+  const CountToFilterOn2 = "RED";
+  const CountToFilterOn3 = "YELLOW";
+  const CountToFilterOn4 = "GREEN";
 
-  //get the "Scheduler Data" worksheet from the workbook
-let tableworksheet = workbook.getWorksheet("SchedulerData");
+  //getting table object reference 
 
-// copying data from "Stope Cadence" to "SchedulerData"
+
+
+
+  
+  const sheet = workbook.getWorksheet(sourceSheet);
+  let selectedSheet = workbook.getWorksheet(targetSheet);
+
+  //adding the table
+  let table = selectedSheet.addTable("A5:AI99", true);
+  
+  
+  
+  
+  //sorting the data 
+  table.getSort().apply([{key: 3, ascending: true}]);
 
 
 }
