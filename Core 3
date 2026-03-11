@@ -11,11 +11,11 @@ function main(workbook: ExcelScript.Workbook)
   const NameOfColumnToFilterOn = "Zone";
 
   //lookub column index (possibly maske dynamic later once running)
-  const indexOfIdStope = 2;
-  const indexOfUser = 7;
-  const indexOfDesignStage = 21;
-  const indexOfSubProcess = 22;
-  const indexOfZoneStatus = 34;
+  const IndexOfIdStope = 2;
+  const IndexOfUser = 7;
+  const IndexOfDesignStage = 21;
+  const IndexOfSubProcess = 22;
+  const IndexOfZoneStatus = 34;
 
   //values to filter for (currently will only use black and red will use other values iff required from feedback) 
   const CountToFilterOn = "BLACK";
@@ -23,15 +23,15 @@ function main(workbook: ExcelScript.Workbook)
   const CountToFilterOn3 = "YELLOW";
   const CountToFilterOn4 = "GREEN";
 
-  const sheet = workbook.getWorksheet(SourceSheet);
-  let selectedSheet = workbook.getWorksheet(TargetSheet);
+  const Sheet = workbook.getWorksheet(SourceSheet);
+  let SelectedSheet = workbook.getWorksheet(TargetSheet);
 
   //sorting the data 
   //table.getSort().apply([{ key: 3, ascending: true }]);
 
   //adding the table and changing name *****Edit Name Later*****
-  let table = selectedSheet.addTable("A5:AI99", true);
-  table.setName("KPI");
+  let Table = SelectedSheet.addTable("A5:AI99", true);
+  Table.setName("KPI");
 
   // Get the source worksheet
   const S_sheet = workbook.getWorksheet(SourceSheet);
@@ -64,5 +64,12 @@ function main(workbook: ExcelScript.Workbook)
   //getting table object reference
   //const sourceTable = workbook(SourceSheet).getTable(TargetTableName);
   //const targetTable = workbook(TargetSheet).getTable(SourceTableName);
+
+  const TableFilters = {};
+  S_table.getColumns().forEach ((column) => {
+    let COlFilterCriteria = column.getFilter().getCriteria();
+    TableFilters[column.getName()] = COlFilterCriteria;
+  })
+  console.log(TableFilters)
 
 }
