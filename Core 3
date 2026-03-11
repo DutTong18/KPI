@@ -99,4 +99,7 @@ function main(workbook: ExcelScript.Workbook)
 
   // adding rows to the new table
   T_table.addRows(-1, RowsToMoveValues); //need to edit to only add the values that are relevent to the task
+
+  const sheet = S_table.getWorksheet();
+  console.log(sheet);
 }
