@@ -65,7 +65,6 @@ function main(workbook: ExcelScript.Workbook)
   //const sourceTable = workbook(SourceSheet).getTable(TargetTableName);
   //const targetTable = workbook(TargetSheet).getTable(SourceTableName);
 
-
   //getting and showing current table filters
   const TableFilters = {};
   S_table.getColumns().forEach ((column) => {
