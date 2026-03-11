@@ -1,0 +1,97 @@
+/*
+ * This script shows how to create a new PivotTable on a new worksheet
+ * from the currently selected table. If a table exists, it should have
+ * at least two columns. By default, the first and the second columns are
+ * used in Raw and Data fields when create a PivotTable. But the sample
+ * suggested to use a string column as Raw field, and a number column as Data field.
+ *
+ * This script also create a PivotChart and a slicer based on the PivotTable.
+ *
+ * This script does not affect any pre-existing data in the workbook.
+ */
+function main(workbook: ExcelScript.Workbook) {
+  // Get the currently active cell from the workbook.
+  let dataSheet = workbook.getActiveWorksheet();
+
+  // Get the first table on the worksheet.
+  let table = dataSheet.getTables()[0];
+
+  if (table === null) {
+    console.log(`No table on this WorkSheet.`);
+    return;
+  }
+
+  if (table.getColumns().length < 2) {
+    console.log(`There are less than two columns in the table.`);
+    return;
+  }
+
+  // Find the first string column and the first number column,
+  // and use them as pivot row and data fields.
+  const range = table.getRangeBetweenHeaderAndTotal();
+  const row = range.getRow(0);
+  const data = row.getValues();
+
+  let stringColumnIndex = data[0].findIndex(
+    (value) => typeof value === "string"
+  );
+
+  let numberColumnIndex = data[0].findIndex(
+    (value) => typeof value === "number"
+  );
+
+  // If there is no string column, use the first column as the default pivot row field.
+  if (stringColumnIndex === -1) {
+    stringColumnIndex = 0;
+  }
+
+  // If there is no number column, use the second column as the default pivot data field.
+  if (numberColumnIndex === -1) {
+    numberColumnIndex = 1;
+  }
+
+  // Add a new worksheet.
+  let pivotSheet = workbook.addWorksheet();
+
+  // Add a new pivot table on pivotSheet.
+  let newPivotTable = workbook.addPivotTable(
+    "PivotTable",
+    table,
+    pivotSheet.getRange("A1")
+  );
+
+  // Get the pivot fields from newPivotTable.
+  let pivotTableFields = newPivotTable.getHierarchies();
+
+  // Add the raw and data fields to create the newPivotTable.
+  let rowField = pivotTableFields[stringColumnIndex];
+  let dataField = pivotTableFields[numberColumnIndex];
+
+  newPivotTable.addRowHierarchy(rowField);
+
+  // Add the second field to the Values area in newPivotTable.
+  newPivotTable.addDataHierarchy(dataField);
+
+  // Optional: Add the third field to the Filters area in newPivotTable.
+  if (pivotTableFields.length > 2) {
+    newPivotTable.addFilterHierarchy(pivotTableFields[2]);
+  }
+
+  // Insert a pivot chart on pivotSheet
+  let newPivotChart = pivotSheet.addChart(
+    ExcelScript.ChartType.columnStacked,
+    newPivotTable.getLayout().getRange()
+  );
+
+  // Insert a pivot slicer on pivotSheet.
+  let newPivotSlicer = pivotSheet.addSlicer(
+    newPivotTable,
+    rowField.getName()
+  );
+
+  // move PivotChart and slicer not to overlap with PivotTable.
+  newPivotChart.setLeft(250);
+  newPivotChart.setTop(250);
+  newPivotSlicer.setLeft(250);
+  newPivotSlicer.setTop(0);
+}
