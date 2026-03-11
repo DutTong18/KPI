@@ -30,7 +30,7 @@ function main(workbook: ExcelScript.Workbook)
   //table.getSort().apply([{ key: 3, ascending: true }]);
 
   //adding the table and changing name *****Edit Name Later*****
-  let Table = SelectedSheet.addTable("A5:AI99", true);
+  let Table = SelectedSheet.addTable("A5:AI5", true);
   Table.setName("KPI");
 
   // Get the source worksheet
@@ -90,4 +90,13 @@ function main(workbook: ExcelScript.Workbook)
   }
   console.log(RowsToMoveValues); //checking the correct rows are moved
   console.log(RowsAddressToRemove); //****Is redundant**** for testing only
+
+  //check if no valid rows exist
+  if(RowsToMoveValues.length < 1){
+    console.log("No rows selected");
+    return;
+  }
+
+  // adding rows to the new table
+  T_table.addRows(-1, RowsToMoveValues); //need to edit to only add the values that are relevent to the task
 }
