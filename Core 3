@@ -1,0 +1,74 @@
+function main(workbook: ExcelScript.Workbook)
+{
+  //initialising variables 
+  //setting sheet names (to awssist with active sheets and sheet to build the table in)  
+  const SourceSheet = "Stope Cadence";
+  const TargetSheet = "SchedulerData";
+  const SourceTableName = "Table1";
+  const TargetTableName = "Table1"; //check table names in excel 
+
+  // initialising column filtering name 
+  const NameOfColumnToFilterOn = "Zone";
+
+  //lookub column index (possibly maske dynamic later once running)
+  const indexOfIdStope = 2;
+  const indexOfUser = 7;
+  const indexOfDesignStage = 21;
+  const indexOfSubProcess = 22;
+  const indexOfZoneStatus = 34;
+
+  //values to filter for (currently will only use black and red will use other values iff required from feedback) 
+  const CountToFilterOn = "BLACK";
+  const CountToFilterOn2 = "RED";
+  const CountToFilterOn3 = "YELLOW";
+  const CountToFilterOn4 = "GREEN";
+
+  // Get the source worksheet
+  const S_sheet = workbook.getWorksheet(SourceSheet);
+  if (!S_sheet) {
+    console.log(`Source Sheet "${SourceSheet}" not found.`);
+    return;
+  }
+
+  // Get the table by name from the source sheet
+  const S_table = workbook.getTable(SourceTableName);
+  if (!S_table) {
+    console.log(`Source Table "${SourceTableName}" not found.`);
+    return;
+  }
+
+  // Get the Target worksheet
+  const T_sheet = workbook.getWorksheet(TargetSheet);
+  if (!T_sheet) {
+    console.log(`Target Sheet "${TargetSheet}" not found.`);
+    return;
+  }
+
+  // Get the table by name from the Target sheet
+  const T_table = workbook.getTable(TargetTableName);
+  if (!T_table) {
+    console.log(`Target Table "${TargetTableName}" not found.`);
+    return;
+  }
+
+  //getting table object reference
+  //const sourceTable = workbook(SourceSheet).getTable(TargetTableName);
+  //const targetTable = workbook(TargetSheet).getTable(SourceTableName);
+
+
+
+
+  const sheet = workbook.getWorksheet(SourceSheet);
+  let selectedSheet = workbook.getWorksheet(TargetSheet);
+
+  //adding the table
+  let table = selectedSheet.addTable("A5:AI99", true);
+  
+  
+  
+  
+  //sorting the data 
+  table.getSort().apply([{key: 3, ascending: true}]);
+
+
+}
