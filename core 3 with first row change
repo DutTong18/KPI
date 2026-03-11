@@ -1,0 +1,124 @@
+function main(workbook: ExcelScript.Workbook)
+{
+  //initialising variables 
+  //setting sheet names (to awssist with active sheets and sheet to build the table in)  
+  const SourceSheet = "Stope Cadence";
+  const TargetSheet = "SchedulerData";
+  const SourceTableName = "Table2";
+  const TargetTableName = "KPI"; //check table names in excel 
+
+  // initialising column filtering name 
+  const NameOfColumnToFilterOn = "Zone";
+
+  //lookub column index (possibly maske dynamic later once running)
+  const IndexOfIdStope = 2;
+  const IndexOfUser = 7;
+  const IndexOfDesignStage = 21;
+  const IndexOfSubProcess = 22;
+  const IndexOfZoneStatus = 34;
+
+  //values to filter for (currently will only use black and red will use other values iff required from feedback) 
+  const CountToFilterOn = "BLACK";
+  const CountToFilterOn2 = "RED";
+  const CountToFilterOn3 = "YELLOW";
+  const CountToFilterOn4 = "GREEN";
+
+  const Sheet = workbook.getWorksheet(SourceSheet);
+  let SelectedSheet = workbook.getWorksheet(TargetSheet);
+
+  //sorting the data 
+  //table.getSort().apply([{ key: 3, ascending: true }]);
+
+  //adding the table and changing name *****Edit Name Later*****
+  let Table = SelectedSheet.addTable("A5:AI5", true);
+  Table.setName("KPI");
+
+// defining column names
+  let ColumnNames = ["Column1",	"Date Modified",	"IDStope",	"IDstope_Short",	"IDStope Historic",	"Mining Front",	"Sequence #",	"User",	"Production Start",	"Production Handover Milestone",	"Schedule Metres(m)",	"Updated Schedule Metres(m)",	"IFC Metres",	"Rate(m / mo)",	"Forecast Dev Start",	"Requried ISR",	"Requried Peer",	"Required Direction",	"Requried IFR",	"Required Design Completion",	"STS_Drill_Start",	"Design Stage",	"Sub - Process",	"Comments",	"Stage_MDM",	"Stage_Category",	"Ta",	"T1",	"C",	"Br",	"Bri",	"Ba", "% Ci", "% Bi",	"Zone"];
+
+  // Get the source worksheet
+  const S_sheet = workbook.getWorksheet(SourceSheet);
+  if (!S_sheet) {
+    console.log(`Source Sheet "${SourceSheet}" not found.`);
+    return;
+  }
+
+  // Get the table by name from the source sheet
+  const S_table = workbook.getTable(SourceTableName);
+  if (!S_table) {
+    console.log(`Source Table "${SourceTableName}" not found.`);
+    return;
+  }
+
+  // Get the Target worksheet
+  const T_sheet = workbook.getWorksheet(TargetSheet);
+  if (!T_sheet) {
+    console.log(`Target Sheet "${TargetSheet}" not found.`);
+    return;
+  }
+
+  // Get the table by name from the Target sheet
+  const T_table = workbook.getTable(TargetTableName);
+  if (!T_table) {
+    console.log(`Target Table "${TargetTableName}" not found.`);
+    return;
+  }
+
+  //getting table object reference
+  //const sourceTable = workbook(SourceSheet).getTable(TargetTableName);
+  //const targetTable = workbook(TargetSheet).getTable(SourceTableName);
+
+  //getting and showing current table filters
+  const TableFilters = {};
+  S_table.getColumns().forEach ((column) => {
+    let COlFilterCriteria = column.getFilter().getCriteria();
+    TableFilters[column.getName()] = COlFilterCriteria;
+  })
+  console.log(TableFilters)//showing table filters for testing. 
+
+  // getting range
+  const S_Range = S_table.getRangeBetweenHeaderAndTotal();
+  const DataRows = S_Range.getValues();
+  const RowsToMoveValues: (number | string | boolean)[][] = [];
+  const RowsAddressToRemove: string[] = []; //****Is redundant**** for testing only
+
+  //getting values from source Table ***Check that it is retrieving the data from the stope  Cadence sheet***
+  for (let i=0; i < DataRows.length; i++){
+    if (DataRows[i][IndexOfZoneStatus] === CountToFilterOn){
+      RowsToMoveValues.push(DataRows[i]);
+      let Address = S_Range.getIntersection(S_Range.getCell(i,0).getEntireRow()).getAddress();
+      RowsAddressToRemove.push(Address);//****Is redundant**** for testing only
+    }
+  }
+  console.log(RowsToMoveValues); //checking the correct rows are moved
+  console.log(RowsAddressToRemove); //****Is redundant**** for testing only
+
+  //getting values from source Table ***Check that it is retrieving the data from the stope  Cadence sheet***
+  for (let j = 0; j < DataRows.length; j++) {
+    if (DataRows[j][IndexOfZoneStatus] === CountToFilterOn2) {
+      RowsToMoveValues.push(DataRows[j]);
+      let Address2 = S_Range.getIntersection(S_Range.getCell(j, 0).getEntireRow()).getAddress();
+      RowsAddressToRemove.push(Address2);//****Is redundant**** for testing only
+    }
+  }
+  console.log(RowsToMoveValues); //checking the correct rows are moved
+  console.log(RowsAddressToRemove); //****Is redundant**** for testing only
+
+  //check if no valid rows exist
+  if(RowsToMoveValues.length < 1){
+    console.log("No rows selected");
+    return;
+  }
+
+  let FirstColumns = S_table.getColumns();
+  //Changing column names 
+  for (let k = 0; k < DataRows.length; k++) {
+    FirstColumns[k].setName(ColumnNames[k]);
+  }
+
+  // adding rows to the new table
+  T_table.addRows(-1, RowsToMoveValues); //need to edit to only add the values that are relevent to the task
+
+  const sheet = S_table.getWorksheet();
+  console.log(sheet);
+}
