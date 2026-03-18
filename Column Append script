@@ -1,0 +1,82 @@
+
+function main(workbook: ExcelScript.Workbook) {
+    // Get the active cell and worksheet.
+    //initialising variables 
+    //setting sheet names (to awssist with active sheets and sheet to build the table in)  
+    const SourceSheet = "Stope Cadence";
+    const TargetSheet = "SchedulerData";
+    const SourceTableName = "Table2";
+    const TargetTableName = "KPI"; //check table names in excel 
+    
+    //start by appending new columns and then run logic to determin how many stages passed
+
+
+    // Get the table by name from the source sheet
+    const S_table = workbook.getTable(SourceTableName);
+    if (!S_table) {
+        console.log(`Source Table "${SourceTableName}" not found.`);
+        return;
+    }
+
+    const S_Range = S_table.getRangeBetweenHeaderAndTotal();
+    const DataRows = S_Range.getValues();
+
+    // Get the last column index and Excel column number of the "KPI" table.
+
+     try {
+        const tableName = "KPI";
+
+        // Get the table
+        const table = workbook.getTable(tableName);
+        if (!table) {
+            console.log(`Table "${tableName}" not found.`);
+            return;
+         }
+
+        // Get number of columns in the table
+        const columnCount = table.getColumns().length;
+        if (columnCount === 0) {
+            console.log(`Table "${tableName}" has no columns.`);
+            return;
+        }
+
+        // Last column index in table (0-based)
+        const lastColumnIndex = columnCount - 1;
+
+        // Get Excel sheet column number (1-based)
+        const lastColumnRange = table.getRange().getLastColumn();
+        const excelColumnNumber = lastColumnRange.getColumnIndex() + 1;
+
+        // Output results
+        console.log(`Last column index in table "${tableName}": ${lastColumnIndex}`);
+        console.log(`Last column name: ${table.getColumns()[lastColumnIndex].getName()}`);
+        console.log(`Excel column number: ${excelColumnNumber}`);
+
+        //-selecting the table to add the columns to
+        let SelectedSheet = workbook.getWorksheet(TargetSheet);
+        //add columns 
+         let PeriodNumber = excelColumnNumber - 5;
+         let TableHeaderString = 'Period number ';
+         let TableHeader = TableHeaderString + PeriodNumber;
+         console.log(TableHeader);
+         let rowCount = table.getRowCount();
+         let newColumnData: number[] = Array(rowCount).fill('');
+         for (let j = 0; j < rowCount; j++){
+            newColumnData.push(j+1);
+         }
+         table.addColumn(null, { name: TableHeader, values: newColumnData });
+
+    } finally {
+        console.log('maybe it worked maybe, it did not, I guess we may never know');
+    }
+
+
+
+
+    // iff complete -> ignore row (figure out how to check and keep complete stopes ask glenn where he wants historic data stored)
+
+    /* TODO: get append running
+    
+    */
+    // ExcelScript.SheetVisibility (Hide sheets when complete)
+}
