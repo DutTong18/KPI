@@ -1,0 +1,223 @@
+function main(workbook: ExcelScript.Workbook)
+{
+  // ── Config ──────────────────────────────────────────────────────────────────
+  const TargetTableName   = "KPI";
+  const StateSheetName    = "_StageStateCache"; // hidden sheet for persisting state
+  const BaseColumnHeader  = "Period";           // appended column prefix: Period 1, Period 2 …
+
+  // Column indices in the KPI table (0-based after slimming to 5 columns)
+  const COL_ID_STOPE      = 0; // ID Stope
+  const COL_DESIGN_STAGE  = 2; // Design Stage
+  const COL_SUB_PROCESS   = 3; // Sub Process
+
+  // Minimum number of steps forward required for a PASS (tick / green)
+  const MIN_STEPS_FORWARD = 2;
+
+  // ── Ordered stage progression ───────────────────────────────────────────────
+  // Each entry is "DesignStage::SubProcess" — use "" for sub-process when none applies.
+  // Order determines progression index; higher index = further along.
+  const STAGE_ORDER: string[] = [
+    "Re-Sequenced::",
+    "Not_Started::",
+    "Geology_Review::",
+    "Draft_Design::",
+    "Draft_Design::0%",
+    "Draft_Design::25%",
+    "Draft_Design::50%",
+    "Draft_Design::75%",
+    "External_Review::",
+    "External_Review::0%",
+    "External_Review::25%",
+    "External_Review::50%",
+    "External_Review::75%",
+    "Concept::",
+    "Shape_Review::",
+    "Shape_Review::Wait on Meeting",
+    "Shape_Review::Updates Post ISR",
+    "Final_Design::",
+    "Final_Design::0%",
+    "Final_Design::25%",
+    "Final_Design::50%",
+    "Final_Design::75%",
+    "Peer_Review::",
+    "Peer_Review::Wait on Meeting",
+    "Peer_Review::Updates Post PR",
+    "Direction_Meeting::",
+    "Direction_Meeting::Wait on Meeting",
+    "Direction_Meeting::Updates Post meeting",
+    "IFR::",
+    "02_Technical::",
+    "03_Operations::",
+    "04_Superintendent::",
+    "05_Manager::",
+    "06_Upload::",
+    "COMPLETE::",
+  ];
+
+  // Build a fast lookup: stageKey → index
+  const stageIndex: { [key: string]: number } = {};
+  STAGE_ORDER.forEach((key, idx) => { stageIndex[key] = idx; });
+
+  // ── Helper: build a stage key from raw cell values ──────────────────────────
+  function stageKey(designStage: string, subProcess: string): string {
+    return `${designStage.trim()}::${subProcess.trim()}`;
+  }
+
+  // ── Helper: get or create the hidden state sheet ────────────────────────────
+  function getStateSheet(): ExcelScript.Worksheet {
+    let sheet = workbook.getWorksheet(StateSheetName);
+    if (!sheet) {
+      sheet = workbook.addWorksheet(StateSheetName);
+      sheet.setVisibility(ExcelScript.SheetVisibility.veryHidden);
+      // Write header row
+      sheet.getRange("A1:C1").setValues([["StopeID", "DesignStage", "SubProcess"]]);
+    }
+    return sheet;
+  }
+
+  // ── Helper: read saved state from hidden sheet ──────────────────────────────
+  // Returns a map of StopeID → { designStage, subProcess }
+  function readSavedState(stateSheet: ExcelScript.Worksheet): { [id: string]: { designStage: string; subProcess: string } } {
+    const usedRange = stateSheet.getUsedRange();
+    if (!usedRange) return {};
+
+    const values = usedRange.getValues();
+    const state: { [id: string]: { designStage: string; subProcess: string } } = {};
+
+    // Skip header row (row 0)
+    for (let i = 1; i < values.length; i++) {
+      const id   = String(values[i][0]);
+      const ds   = String(values[i][1]);
+      const sp   = String(values[i][2]);
+      if (id) state[id] = { designStage: ds, subProcess: sp };
+    }
+    return state;
+  }
+
+  // ── Helper: overwrite saved state with current values ──────────────────────
+  function writeSavedState(
+    stateSheet: ExcelScript.Worksheet,
+    currentState: { id: string; designStage: string; subProcess: string }[]
+  ): void {
+    // Clear existing data (keep header)
+    const usedRange = stateSheet.getUsedRange();
+    if (usedRange) {
+      stateSheet.getRange(`A2:C${usedRange.getRowCount() + 10}`).clear();
+    }
+
+    if (currentState.length === 0) return;
+
+    const rows = currentState.map(s => [s.id, s.designStage, s.subProcess]);
+    stateSheet
+      .getRange(`A2:C${1 + currentState.length}`)
+      .setValues(rows);
+  }
+
+  // ── Get KPI table ───────────────────────────────────────────────────────────
+  const T_table = workbook.getTable(TargetTableName);
+  if (!T_table) {
+    console.log(`Table "${TargetTableName}" not found.`);
+    return;
+  }
+
+  // ── Find unique column header for this run ──────────────────────────────────
+  const existingNames = T_table.getColumns().map(col => col.getName());
+  let counter = 1;
+  let newHeader = `${BaseColumnHeader} ${counter}`;
+  while (existingNames.includes(newHeader)) {
+    counter++;
+    newHeader = `${BaseColumnHeader} ${counter}`;
+  }
+
+  // ── Read current data from KPI table ───────────────────────────────────────
+  const dataRange = T_table.getRangeBetweenHeaderAndTotal();
+  const rowCount  = dataRange.getRowCount();
+
+  if (rowCount === 0) {
+    console.log("KPI table has no data rows.");
+    return;
+  }
+
+  const dataValues = dataRange.getValues();
+
+  // ── Load previous state ─────────────────────────────────────────────────────
+  const stateSheet  = getStateSheet();
+  const savedState  = readSavedState(stateSheet);
+
+  // ── Evaluate each row ───────────────────────────────────────────────────────
+  const currentStateList: { id: string; designStage: string; subProcess: string }[] = [];
+  const columnCellValues: (string)[][] = [];
+  const passFail: boolean[] = [];
+
+  for (let i = 0; i < rowCount; i++) {
+    const id          = String(dataValues[i][COL_ID_STOPE]);
+    const designStage = String(dataValues[i][COL_DESIGN_STAGE]);
+    const subProcess  = String(dataValues[i][COL_SUB_PROCESS]);
+
+    currentStateList.push({ id, designStage, subProcess });
+
+    const currentKey = stageKey(designStage, subProcess);
+    const currentIdx = stageIndex[currentKey] ?? -1;
+
+    const prev = savedState[id];
+    let pass = false;
+
+    if (!prev) {
+      // First time we've seen this stope — no previous state to compare
+      columnCellValues.push(["?"]);
+      passFail.push(false);
+      console.log(`Stope ${id}: no previous state recorded.`);
+      continue;
+    }
+
+    const prevKey = stageKey(prev.designStage, prev.subProcess);
+    const prevIdx = stageIndex[prevKey] ?? -1;
+
+    if (currentIdx === -1 || prevIdx === -1) {
+      console.log(`Stope ${id}: unrecognised stage key (prev="${prevKey}", current="${currentKey}").`);
+      columnCellValues.push(["?"]);
+      passFail.push(false);
+      continue;
+    }
+
+    const delta = currentIdx - prevIdx;
+    pass = delta >= MIN_STEPS_FORWARD;
+
+    console.log(`Stope ${id}: ${prevKey} → ${currentKey} (Δ${delta}) → ${pass ? "PASS" : "FAIL"}`);
+    columnCellValues.push([pass ? "✓" : "✗"]);
+    passFail.push(pass);
+  }
+
+  // ── Append column and write tick / cross values ─────────────────────────────
+  const newCol = T_table.addColumn(-1);
+  newCol.setName(newHeader);
+
+  const newColRange = newCol.getRangeBetweenHeaderAndTotal();
+  newColRange.setValues(columnCellValues);
+
+  // Apply green / red cell fill and matching font colour
+  for (let i = 0; i < rowCount; i++) {
+    const cell = newColRange.getCell(i, 0);
+    const val  = columnCellValues[i][0];
+
+    if (val === "✓") {
+      cell.getFormat().getFill().setColor("#C6EFCE"); // light green
+      cell.getFormat().getFont().setColor("#276221"); // dark green
+    } else if (val === "✗") {
+      cell.getFormat().getFill().setColor("#FFC7CE"); // light red
+      cell.getFormat().getFont().setColor("#9C0006"); // dark red
+    } else {
+      cell.getFormat().getFill().setColor("#FFEB9C"); // light yellow (unknown)
+      cell.getFormat().getFont().setColor("#9C5700"); // dark orange
+    }
+
+    // Centre-align the symbol
+    cell.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
+  }
+
+  // ── Save current state for next run ────────────────────────────────────────
+  writeSavedState(stateSheet, currentStateList);
+
+  const passCount = passFail.filter(Boolean).length;
+  console.log(`Done — "${newHeader}" added. ${passCount}/${rowCount} stopes passed (≥${MIN_STEPS_FORWARD} stage steps forward).`);
+}
