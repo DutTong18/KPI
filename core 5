@@ -184,11 +184,11 @@ function main(workbook: ExcelScript.Workbook)
     pass = delta >= MIN_STEPS_FORWARD;
 
     console.log(`Stope ${id}: ${prevKey} → ${currentKey} (Δ${delta}) → ${pass ? "PASS" : "FAIL"}`);
-    columnCellValues.push([pass ? "✓" : "✗"]);
+    columnCellValues.push([pass ? "Y" : "N"]);
     passFail.push(pass);
   }
 
-  // ── Append column and write tick / cross values ─────────────────────────────
+  // ── Append column and write Y / N values ────────────────────────────────────
   const newCol = T_table.addColumn(-1);
   newCol.setName(newHeader);
 
@@ -200,10 +200,10 @@ function main(workbook: ExcelScript.Workbook)
     const cell = newColRange.getCell(i, 0);
     const val  = columnCellValues[i][0];
 
-    if (val === "✓") {
+    if (val === "Y") {
       cell.getFormat().getFill().setColor("#C6EFCE"); // light green
       cell.getFormat().getFont().setColor("#276221"); // dark green
-    } else if (val === "✗") {
+    } else if (val === "N") {
       cell.getFormat().getFill().setColor("#FFC7CE"); // light red
       cell.getFormat().getFont().setColor("#9C0006"); // dark red
     } else {
@@ -215,9 +215,18 @@ function main(workbook: ExcelScript.Workbook)
     cell.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
   }
 
+  // ── Append a blank Notes column immediately after the period column ─────────
+  const notesHeader = `${newHeader} Notes`;
+  const notesCol = T_table.addColumn(-1);
+  notesCol.setName(notesHeader);
+
+  if (rowCount > 0) {
+    notesCol.getRangeBetweenHeaderAndTotal().setValues(Array(rowCount).fill([""]));
+  }
+
   // ── Save current state for next run ────────────────────────────────────────
   writeSavedState(stateSheet, currentStateList);
 
   const passCount = passFail.filter(Boolean).length;
-  console.log(`Done — "${newHeader}" added. ${passCount}/${rowCount} stopes passed (≥${MIN_STEPS_FORWARD} stage steps forward).`);
+  console.log(`Done — "${newHeader}" and "${notesHeader}" added. ${passCount}/${rowCount} stopes passed (≥${MIN_STEPS_FORWARD} stage steps forward).`);
 }
