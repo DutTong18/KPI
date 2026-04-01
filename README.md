@@ -1,4 +1,5 @@
 # KPI
+# Current Stage: TESTING
 # checkStageProgress.ts — README
 
 ## Overview
@@ -181,8 +182,17 @@ If a new design stage or sub-process is introduced:
 
 ## Future Changes
 Changes will be made to;
-correct errors in sub process checking (append process and sub process -> check with list of stages as strings)
+1. correct errors in sub process checking (append process and sub process -> check with list of stages as strings)
+2. correct errors with Draft_Design and sub processes
+3. correction to header row colour
+4. generate new sheet of historic stage
+5. manage completed stopes (marked as ISR Need to ask )
+6. changes made to script to allow new stopes to be added withought column error
+7. change logic to check individual stage, to prevent table growing laterally indefinitely
+8. 
 
-> NOTE: Inserting a new stage shifts the index of every entry below it. Any stopes that were at those stages when the cache was last written will have their delta recalculated based on the new indices on the next run, which may produce unexpected Y / N results for a single run after the change.
 
-If there are any issues found that have not been adressed here please feel free to reach out!
+> NOTE: 
+
+## If there are any issues found that have not been adressed here please feel free to reach out!
+
