@@ -1,19 +1,18 @@
-function main(workbook: ExcelScript.Workbook)
-{
-  // ── Config ──────────────────────────────────────────────────────────────────
-  const TargetTableName   = "KPI";
-  const StateSheetName    = "_StageStateCache"; // hidden sheet for persisting state
-  const BaseColumnHeader  = "Period";           // appended column prefix: Period 1, Period 2 …
+function main(workbook: ExcelScript.Workbook) {
+  //  Config 
+  const TargetTableName = "KPI";
+  const StateSheetName = "_StageStateCache"; // hidden sheet for persisting state
+  const BaseColumnHeader = "Period";           // appended column prefix: Period 1, Period 2 …
 
   // Column indices in the KPI table (0-based after slimming to 5 columns)
-  const COL_ID_STOPE      = 0; // ID Stope
-  const COL_DESIGN_STAGE  = 2; // Design Stage
-  const COL_SUB_PROCESS   = 3; // Sub Process
+  const COL_ID_STOPE = 0; // ID Stope
+  const COL_DESIGN_STAGE = 2; // Design Stage
+  const COL_SUB_PROCESS = 3; // Sub Process
 
   // Minimum number of steps forward required for a PASS (tick / green)
   const MIN_STEPS_FORWARD = 2;
 
-  // ── Ordered stage progression ───────────────────────────────────────────────
+  //  Ordered stage progression 
   // Each entry is "DesignStage::SubProcess" — use "" for sub-process when none applies.
   // Order determines progression index; higher index = further along.
   const STAGE_ORDER: string[] = [
@@ -58,24 +57,24 @@ function main(workbook: ExcelScript.Workbook)
   const stageIndex: { [key: string]: number } = {};
   STAGE_ORDER.forEach((key, idx) => { stageIndex[key] = idx; });
 
-  // ── Helper: build a stage key from raw cell values ──────────────────────────
+  //  build a stage key from raw cell values 
   function stageKey(designStage: string, subProcess: string): string {
     return `${designStage.trim()}::${subProcess.trim()}`;
   }
 
-  // ── Helper: get or create the hidden state sheet ────────────────────────────
+  //  get or create the hidden state sheet 
   function getStateSheet(): ExcelScript.Worksheet {
     let sheet = workbook.getWorksheet(StateSheetName);
     if (!sheet) {
       sheet = workbook.addWorksheet(StateSheetName);
-      sheet.setVisibility(ExcelScript.SheetVisibility.veryHidden);
+      sheet.setVisibility(ExcelScript.SheetVisibility.hidden);
       // Write header row
       sheet.getRange("A1:C1").setValues([["StopeID", "DesignStage", "SubProcess"]]);
     }
     return sheet;
   }
 
-  // ── Helper: read saved state from hidden sheet ──────────────────────────────
+  //  read saved state from hidden sheet 
   // Returns a map of StopeID → { designStage, subProcess }
   function readSavedState(stateSheet: ExcelScript.Worksheet): { [id: string]: { designStage: string; subProcess: string } } {
     const usedRange = stateSheet.getUsedRange();
@@ -86,15 +85,15 @@ function main(workbook: ExcelScript.Workbook)
 
     // Skip header row (row 0)
     for (let i = 1; i < values.length; i++) {
-      const id   = String(values[i][0]);
-      const ds   = String(values[i][1]);
-      const sp   = String(values[i][2]);
+      const id = String(values[i][0]);
+      const ds = String(values[i][1]);
+      const sp = String(values[i][2]);
       if (id) state[id] = { designStage: ds, subProcess: sp };
     }
     return state;
   }
 
-  // ── Helper: overwrite saved state with current values ──────────────────────
+  //  overwrite saved state with current values 
   function writeSavedState(
     stateSheet: ExcelScript.Worksheet,
     currentState: { id: string; designStage: string; subProcess: string }[]
@@ -113,14 +112,14 @@ function main(workbook: ExcelScript.Workbook)
       .setValues(rows);
   }
 
-  // ── Get KPI table ───────────────────────────────────────────────────────────
+  //  Get KPI table 
   const T_table = workbook.getTable(TargetTableName);
   if (!T_table) {
     console.log(`Table "${TargetTableName}" not found.`);
     return;
   }
 
-  // ── Find unique column header for this run ──────────────────────────────────
+  //  Find unique column header for this run 
   const existingNames = T_table.getColumns().map(col => col.getName());
   let counter = 1;
   let newHeader = `${BaseColumnHeader} ${counter}`;
@@ -129,9 +128,9 @@ function main(workbook: ExcelScript.Workbook)
     newHeader = `${BaseColumnHeader} ${counter}`;
   }
 
-  // ── Read current data from KPI table ───────────────────────────────────────
+  //  Read current data from KPI table 
   const dataRange = T_table.getRangeBetweenHeaderAndTotal();
-  const rowCount  = dataRange.getRowCount();
+  const rowCount = dataRange.getRowCount();
 
   if (rowCount === 0) {
     console.log("KPI table has no data rows.");
@@ -140,19 +139,19 @@ function main(workbook: ExcelScript.Workbook)
 
   const dataValues = dataRange.getValues();
 
-  // ── Load previous state ─────────────────────────────────────────────────────
-  const stateSheet  = getStateSheet();
-  const savedState  = readSavedState(stateSheet);
+  //  Load previous state 
+  const stateSheet = getStateSheet();
+  const savedState = readSavedState(stateSheet);
 
-  // ── Evaluate each row ───────────────────────────────────────────────────────
+  //  Evaluate each row 
   const currentStateList: { id: string; designStage: string; subProcess: string }[] = [];
   const columnCellValues: (string)[][] = [];
   const passFail: boolean[] = [];
 
   for (let i = 0; i < rowCount; i++) {
-    const id          = String(dataValues[i][COL_ID_STOPE]);
+    const id = String(dataValues[i][COL_ID_STOPE]);
     const designStage = String(dataValues[i][COL_DESIGN_STAGE]);
-    const subProcess  = String(dataValues[i][COL_SUB_PROCESS]);
+    const subProcess = String(dataValues[i][COL_SUB_PROCESS]);
 
     currentStateList.push({ id, designStage, subProcess });
 
@@ -188,7 +187,7 @@ function main(workbook: ExcelScript.Workbook)
     passFail.push(pass);
   }
 
-  // ── Append column and write Y / N values ────────────────────────────────────
+  //Append column and write Y / N values 
   const newCol = T_table.addColumn(-1);
   newCol.setName(newHeader);
 
@@ -198,7 +197,7 @@ function main(workbook: ExcelScript.Workbook)
   // Apply green / red cell fill and matching font colour
   for (let i = 0; i < rowCount; i++) {
     const cell = newColRange.getCell(i, 0);
-    const val  = columnCellValues[i][0];
+    const val = columnCellValues[i][0];
 
     if (val === "Y") {
       cell.getFormat().getFill().setColor("#C6EFCE"); // light green
@@ -207,7 +206,7 @@ function main(workbook: ExcelScript.Workbook)
       cell.getFormat().getFill().setColor("#FFC7CE"); // light red
       cell.getFormat().getFont().setColor("#9C0006"); // dark red
     } else {
-      cell.getFormat().getFill().setColor("#FFEB9C"); // light yellow (unknown)
+      cell.getFormat().getFill().setColor("#FFEB9C"); // light yellow
       cell.getFormat().getFont().setColor("#9C5700"); // dark orange
     }
 
@@ -215,18 +214,34 @@ function main(workbook: ExcelScript.Workbook)
     cell.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
   }
 
-  // ── Append a blank Notes column immediately after the period column ─────────
+  //Append a blank Notes column after the period column 
   const notesHeader = `${newHeader} Notes`;
   const notesCol = T_table.addColumn(-1);
   notesCol.setName(notesHeader);
+  
+  //changing notes column range
+  const lastCol = T_table.getColumnByName(notesHeader);
+  console.log("column range");
+  const colstr = lastCol.getRangeBetweenHeaderAndTotal.toString;
+  //console.log(lastCol);
+  //colrng.getFormat().getFill().setColor(#ffffff);
+
+
+
+  //colour blank cell to grey or just white depends on what looks better
+  for (let j = 0; j < rowCount; j++){
+    //const cells = newColRange.getCell(j, finalColCurrent);
+    //const vals = columnCellValues[j][finalColCurrent];
+      //cells.getFormat().getFill().setColor("#ffffff");
+  }
 
   if (rowCount > 0) {
     notesCol.getRangeBetweenHeaderAndTotal().setValues(Array(rowCount).fill([""]));
   }
 
-  // ── Save current state for next run ────────────────────────────────────────
+  // Save current state for next run 
   writeSavedState(stateSheet, currentStateList);
 
-  const passCount = passFail.filter(Boolean).length;
-  console.log(`Done — "${newHeader}" and "${notesHeader}" added. ${passCount}/${rowCount} stopes passed (≥${MIN_STEPS_FORWARD} stage steps forward).`);
+  /*const passCount = passFail.filter(Boolean).length;
+  console.log(`Done — "${newHeader}" and "${notesHeader}" added. ${passCount}/${rowCount} stopes passed (≥${MIN_STEPS_FORWARD} stage steps forward).`);*/
 }
