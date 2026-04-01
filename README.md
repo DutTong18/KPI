@@ -107,7 +107,7 @@ For each row in the KPI table the script:
 ### 5. Column Output
 Two columns are appended to the KPI table on each run:
 
-- **Period N** — contains Y / N / ? with colour formatting
+- **Period N** — contains Y / N / ? / NEWLY RED/BLACK with colour formatting
 - **Period N Notes** — blank, for manual comments
 
 The counter increments automatically so existing columns are never overwritten.
@@ -132,7 +132,7 @@ The counter increments automatically so existing columns are never overwritten.
 
 ---
 
-### All stopes show `?` on first run
+### All stopes show `NEWLY RED/BLACK` on first run
 **Cause:** This is expected behaviour. The first time the script runs there is no previous state in `_StageStateCache` to compare against. The current state is saved on this first run, so the second run will produce Y / N results.
 
 ---
