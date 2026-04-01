@@ -189,7 +189,8 @@ Changes will be made to;
 5. manage completed stopes (marked as IFR Need to ask )
 6. changes made to script to allow new stopes to be added withought column error
 7. change logic to check individual stage, to prevent table growing laterally indefinitely
-8. 
+8. changes will be made to save completed stope data / Graphs and how are they presented
+9. User percentages and presentation (leaderboard of least occurences?? [may be polarising])
 
 
 > NOTE: 
