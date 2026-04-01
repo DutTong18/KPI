@@ -183,14 +183,16 @@ If a new design stage or sub-process is introduced:
 ## Future Changes
 Changes will be made to;
 1. correct errors in sub process checking (append process and sub process -> check with list of stages as strings)
-2. correct errors with Draft_Design and sub processes
-3. correction to header row colour
-4. generate new sheet of historic stage
-5. manage completed stopes (marked as IFR Need to ask )
-6. changes made to script to allow new stopes to be added withought column error
-7. change logic to check individual stage, to prevent table growing laterally indefinitely
-8. changes will be made to save completed stope data / Graphs and how are they presented
-9. User percentages and presentation (leaderboard of least occurences?? [may be polarising])
+2. reference or add new stope status automatically
+3. correct errors with Draft_Design and sub processes
+4. correction to header row colour
+5. generate new sheet of historic stage
+6. manage completed stopes (marked as IFR Need to ask )
+7. changes made to script to allow new stopes to be added withought column error
+8. change logic to check individual stage, to prevent table growing laterally indefinitely
+9. changes will be made to save completed stope data / Graphs and how are they presented
+10. User percentages and presentation (leaderboard of least occurences?? [may be polarising])
+11. Deployment!
 
 
 > NOTE: 
