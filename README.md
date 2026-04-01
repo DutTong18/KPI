@@ -189,11 +189,12 @@ Changes will be made to;
 6. generate new sheet of historic stage
 7. manage completed stopes (marked as IFR Need to ask )
 8. changes made to script to allow new stopes to be added withought column error
-9. **change logic to check individual stage, to prevent table growing laterally indefinitely**
-10. changes will be made to save completed stope data / Graphs and how are they presented
-11. User percentages and presentation (leaderboard?? [may be polarising])
-12. Deployment!
-13. continued updates 
+9. **change logic to check individual stage, to prevent table growing laterally indefinitely and show each standard timeline**
+10. manage schedule changes / remove stopes that are no longer classed as black or red (have a count of "clutched stopes [potentially boost score / ranking same goes if you pick op other peoples stopes]")
+11. changes will be made to save completed stope data / Graphs and how are they presented
+12. User percentages and presentation (leaderboard?? [may be polarising])
+13. Deployment!
+14. continued updates 
 
 ## Nice to haves
 1.  standardise naming conventions
