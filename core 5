@@ -218,6 +218,10 @@ function main(workbook: ExcelScript.Workbook) {
   const notesHeader = `${newHeader} Notes`;
   const notesCol = T_table.addColumn(-1);
   notesCol.setName(notesHeader);
+  const gcr = notesCol.getRange();
+  gcr.getFormat().getFill().setColor("#ffffff");
+  gcr.getFormat().getFont().setColor("#000000");
+  
   
   //changing notes column range
   const lastCol = T_table.getColumnByName(notesHeader);
