@@ -186,7 +186,7 @@ Changes will be made to;
 2. correct errors with Draft_Design and sub processes
 3. correction to header row colour
 4. generate new sheet of historic stage
-5. manage completed stopes (marked as ISR Need to ask )
+5. manage completed stopes (marked as IFR Need to ask )
 6. changes made to script to allow new stopes to be added withought column error
 7. change logic to check individual stage, to prevent table growing laterally indefinitely
 8. 
