@@ -176,3 +176,13 @@ If a new design stage or sub-process is introduced:
 4. Save and run — all future comparisons will include the new stage
 
 > NOTE: Inserting a new stage shifts the index of every entry below it. Any stopes that were at those stages when the cache was last written will have their delta recalculated based on the new indices on the next run, which may produce unexpected Y / N results for a single run after the change.
+
+---
+
+## Future Changes
+Changes will be made to;
+correct errors in sub process checking (append process and sub process -> check with list of stages as strings)
+
+> NOTE: Inserting a new stage shifts the index of every entry below it. Any stopes that were at those stages when the cache was last written will have their delta recalculated based on the new indices on the next run, which may produce unexpected Y / N results for a single run after the change.
+
+If there are any issues found that have not been adressed here please feel free to reach out!
