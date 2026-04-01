@@ -99,7 +99,7 @@ For each row in the KPI table the script:
 |---|---|---|
 | `delta >= 2` | **Y** | Green |
 | `delta < 2` | **N** | Red |
-| No previous state found | **?** | Yellow |
+| No previous state found | **NEWLY RED/BLACK** | Yellow |
 | Stage key not in `STAGE_ORDER` | **?** | Yellow |
 
 ---
