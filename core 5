@@ -1,21 +1,27 @@
-function main(workbook: ExcelScript.Workbook) {
-  //  Config 
-  const TargetTableName = "KPI";
-  const StateSheetName = "_StageStateCache"; // hidden sheet for persisting state
-  const BaseColumnHeader = "Period";           // appended column prefix: Period 1, Period 2 …
+function main(workbook: ExcelScript.Workbook)
+{
+  // Config
+  const TargetTableName  = "KPI";
+  const StateSheetName   = "_StageStateCache";
+  const BaseColumnHeader = "Period";
 
-  // Column indices in the KPI table (0-based after slimming to 5 columns)
-  const COL_ID_STOPE = 0; // ID Stope
-  const COL_DESIGN_STAGE = 2; // Design Stage
-  const COL_SUB_PROCESS = 3; // Sub Process
+  // Column indices in the KPI table (0-based)
+  const COL_ID_STOPE     = 0;
+  const COL_DESIGN_STAGE = 2;
+  const COL_SUB_PROCESS  = 3;
+  const COL_ZONE_STATUS  = 4;
 
-  // Minimum number of steps forward required for a PASS (tick / green)
+  // Summary block anchor on the SchedulerData sheet (written above the KPI table)
+  const SUMMARY_ANCHOR   = "A1"; // top-left cell of the 3-row summary block
+
+  // Minimum stage steps forward required for a pass (Y)
   const MIN_STEPS_FORWARD = 2;
 
-  //  Ordered stage progression 
-  // Each entry is "DesignStage::SubProcess" — use "" for sub-process when none applies.
-  // Order determines progression index; higher index = further along.
-  const STAGE_ORDER: string[] = [
+  // Seed order
+  // Used only on the very first run to initialise the stage order list.
+  // After that, the order persisted in the cache sheet is the source of truth,
+  // and any new stage keys found in the data are appended automatically.
+  const SEED_ORDER: string[] = [
     "Re-Sequenced::",
     "Not_Started::",
     "Geology_Review::",
@@ -53,29 +59,49 @@ function main(workbook: ExcelScript.Workbook) {
     "COMPLETE::",
   ];
 
-  // Build a fast lookup: stageKey → index
-  const stageIndex: { [key: string]: number } = {};
-  STAGE_ORDER.forEach((key, idx) => { stageIndex[key] = idx; });
-
-  //  build a stage key from raw cell values 
+  // Helper: build a stage key
   function stageKey(designStage: string, subProcess: string): string {
     return `${designStage.trim()}::${subProcess.trim()}`;
   }
 
-  //  get or create the hidden state sheet 
+  // Helper: get or create hidden cache sheet
+  // Layout:  A–C = stope state (StopeID | DesignStage | SubProcess)
+  //          E   = stage order (one key per row, header in E1)
   function getStateSheet(): ExcelScript.Worksheet {
     let sheet = workbook.getWorksheet(StateSheetName);
     if (!sheet) {
       sheet = workbook.addWorksheet(StateSheetName);
-      sheet.setVisibility(ExcelScript.SheetVisibility.hidden);
-      // Write header row
+      sheet.setVisibility(ExcelScript.SheetVisibility.veryHidden);
       sheet.getRange("A1:C1").setValues([["StopeID", "DesignStage", "SubProcess"]]);
+      sheet.getRange("E1").setValue("StageOrder");
     }
     return sheet;
   }
 
-  //  read saved state from hidden sheet 
-  // Returns a map of StopeID → { designStage, subProcess }
+  // Helper: read persisted stage order from column E
+  function readStageOrder(stateSheet: ExcelScript.Worksheet): string[] {
+    const usedRange = stateSheet.getUsedRange();
+    if (!usedRange) return [...SEED_ORDER];
+
+    const values = usedRange.getValues();
+    const order: string[] = [];
+    for (let i = 1; i < values.length; i++) {
+      const key = values[i][4]; // column E = index 4
+      if (key !== undefined && key !== null && String(key).trim() !== "") {
+        order.push(String(key).trim());
+      }
+    }
+    return order.length > 0 ? order : [...SEED_ORDER];
+  }
+
+  // Helper: write stage order back to column E
+  function writeStageOrder(stateSheet: ExcelScript.Worksheet, order: string[]): void {
+    stateSheet.getRange(`E2:E${order.length + 20}`).clear();
+    if (order.length === 0) return;
+    stateSheet.getRange(`E2:E${1 + order.length}`).setValues(order.map(k => [k]));
+  }
+
+  // Helper: read saved stope state from columns A–C
   function readSavedState(stateSheet: ExcelScript.Worksheet): { [id: string]: { designStage: string; subProcess: string } } {
     const usedRange = stateSheet.getUsedRange();
     if (!usedRange) return {};
@@ -83,54 +109,37 @@ function main(workbook: ExcelScript.Workbook) {
     const values = usedRange.getValues();
     const state: { [id: string]: { designStage: string; subProcess: string } } = {};
 
-    // Skip header row (row 0)
     for (let i = 1; i < values.length; i++) {
-      const id = String(values[i][0]);
-      const ds = String(values[i][1]);
-      const sp = String(values[i][2]);
-      if (id) state[id] = { designStage: ds, subProcess: sp };
+      const id = String(values[i][0]).trim();
+      const ds = String(values[i][1]).trim();
+      const sp = String(values[i][2]).trim();
+      if (id && id !== "undefined") state[id] = { designStage: ds, subProcess: sp };
     }
     return state;
   }
 
-  //  overwrite saved state with current values 
+  // Helper: write stope state to columns A–C
   function writeSavedState(
     stateSheet: ExcelScript.Worksheet,
     currentState: { id: string; designStage: string; subProcess: string }[]
   ): void {
-    // Clear existing data (keep header)
     const usedRange = stateSheet.getUsedRange();
-    if (usedRange) {
-      stateSheet.getRange(`A2:C${usedRange.getRowCount() + 10}`).clear();
-    }
-
+    if (usedRange) stateSheet.getRange(`A2:C${usedRange.getRowCount() + 10}`).clear();
     if (currentState.length === 0) return;
-
-    const rows = currentState.map(s => [s.id, s.designStage, s.subProcess]);
     stateSheet
       .getRange(`A2:C${1 + currentState.length}`)
-      .setValues(rows);
+      .setValues(currentState.map(s => [s.id, s.designStage, s.subProcess]));
   }
 
-  //  Get KPI table 
+  // Get KPI table
   const T_table = workbook.getTable(TargetTableName);
   if (!T_table) {
     console.log(`Table "${TargetTableName}" not found.`);
     return;
   }
 
-  //  Find unique column header for this run 
-  const existingNames = T_table.getColumns().map(col => col.getName());
-  let counter = 1;
-  let newHeader = `${BaseColumnHeader} ${counter}`;
-  while (existingNames.includes(newHeader)) {
-    counter++;
-    newHeader = `${BaseColumnHeader} ${counter}`;
-  }
-
-  //  Read current data from KPI table 
   const dataRange = T_table.getRangeBetweenHeaderAndTotal();
-  const rowCount = dataRange.getRowCount();
+  const rowCount  = dataRange.getRowCount();
 
   if (rowCount === 0) {
     console.log("KPI table has no data rows.");
@@ -139,113 +148,190 @@ function main(workbook: ExcelScript.Workbook) {
 
   const dataValues = dataRange.getValues();
 
-  //  Load previous state 
+  // Load cache
   const stateSheet = getStateSheet();
   const savedState = readSavedState(stateSheet);
+  const stageOrder = readStageOrder(stateSheet); // mutable — new keys get appended
 
-  //  Evaluate each row 
-  const currentStateList: { id: string; designStage: string; subProcess: string }[] = [];
-  const columnCellValues: (string)[][] = [];
-  const passFail: boolean[] = [];
+  // Build fast index lookup
+  const stageIdx: { [key: string]: number } = {};
+  stageOrder.forEach((k, i) => { stageIdx[k] = i; });
+
+  // Scan all rows — register any new stage keys
+  let orderChanged = false;
 
   for (let i = 0; i < rowCount; i++) {
-    const id = String(dataValues[i][COL_ID_STOPE]);
-    const designStage = String(dataValues[i][COL_DESIGN_STAGE]);
-    const subProcess = String(dataValues[i][COL_SUB_PROCESS]);
+    const key = stageKey(
+      String(dataValues[i][COL_DESIGN_STAGE]),
+      String(dataValues[i][COL_SUB_PROCESS])
+    );
+    if (stageIdx[key] === undefined) {
+      stageIdx[key] = stageOrder.length;
+      stageOrder.push(key);
+      orderChanged = true;
+      console.log(`New stage registered: "${key}" at index ${stageIdx[key]}`);
+    }
+  }
+
+  // Find unique column header for this run
+  const existingNames = T_table.getColumns().map(col => col.getName());
+  let counter = 1;
+  let newHeader = `${BaseColumnHeader} ${counter}`;
+  while (existingNames.includes(newHeader)) {
+    counter++;
+    newHeader = `${BaseColumnHeader} ${counter}`;
+  }
+
+  // Evaluate each row
+  const currentStateList: { id: string; designStage: string; subProcess: string }[] = [];
+  const columnCellValues: string[][] = [];
+  const passFail: boolean[]          = [];
+
+  for (let i = 0; i < rowCount; i++) {
+    const id          = String(dataValues[i][COL_ID_STOPE]).trim();
+    const designStage = String(dataValues[i][COL_DESIGN_STAGE]).trim();
+    const subProcess  = String(dataValues[i][COL_SUB_PROCESS]).trim();
 
     currentStateList.push({ id, designStage, subProcess });
 
     const currentKey = stageKey(designStage, subProcess);
-    const currentIdx = stageIndex[currentKey] ?? -1;
-
-    const prev = savedState[id];
-    let pass = false;
+    const currentI   = stageIdx[currentKey] ?? -1;
+    const prev       = savedState[id];
 
     if (!prev) {
-      // First time we've seen this stope — no previous state to compare
       columnCellValues.push(["?"]);
       passFail.push(false);
-      console.log(`Stope ${id}: no previous state recorded.`);
+      console.log(`Stope ${id}: no previous state — first run.`);
       continue;
     }
 
     const prevKey = stageKey(prev.designStage, prev.subProcess);
-    const prevIdx = stageIndex[prevKey] ?? -1;
+    const prevI   = stageIdx[prevKey] ?? -1;
 
-    if (currentIdx === -1 || prevIdx === -1) {
-      console.log(`Stope ${id}: unrecognised stage key (prev="${prevKey}", current="${currentKey}").`);
+    if (currentI === -1 || prevI === -1) {
       columnCellValues.push(["?"]);
       passFail.push(false);
+      console.log(`Stope ${id}: could not resolve index — prev="${prevKey}"[${prevI}], current="${currentKey}"[${currentI}].`);
       continue;
     }
 
-    const delta = currentIdx - prevIdx;
-    pass = delta >= MIN_STEPS_FORWARD;
+    const delta = currentI - prevI;
+    const pass  = delta >= MIN_STEPS_FORWARD;
 
-    console.log(`Stope ${id}: ${prevKey} → ${currentKey} (Δ${delta}) → ${pass ? "PASS" : "FAIL"}`);
+    console.log(`Stope ${id}: "${prevKey}"[${prevI}] → "${currentKey}"[${currentI}] (delta=${delta}) → ${pass ? "PASS" : "FAIL"}`);
     columnCellValues.push([pass ? "Y" : "N"]);
     passFail.push(pass);
   }
 
-  //Append column and write Y / N values 
-  const newCol = T_table.addColumn(-1);
+  // Append Period column
+  const newCol      = T_table.addColumn(-1);
   newCol.setName(newHeader);
-
   const newColRange = newCol.getRangeBetweenHeaderAndTotal();
-  newColRange.setValues(columnCellValues);
 
-  // Apply green / red cell fill and matching font colour
-  for (let i = 0; i < rowCount; i++) {
+  // Re-read actual row count from the live range after addColumn.
+  // If new stope rows were added to the table between the initial read and now,
+  // rowCount may be stale. Pad with "?" to prevent a setValues size-mismatch error.
+  const actualRowCount = newColRange.getRowCount();
+  while (columnCellValues.length < actualRowCount) {
+    columnCellValues.push(["?"]);
+    passFail.push(false);
+    console.log(`New stope detected at row ${columnCellValues.length} — padded with "?".`);
+  }
+
+  newColRange.setValues(columnCellValues.slice(0, actualRowCount));
+
+  for (let i = 0; i < actualRowCount; i++) {
     const cell = newColRange.getCell(i, 0);
-    const val = columnCellValues[i][0];
+    const val  = (columnCellValues[i] ?? ["?"])[0];
 
     if (val === "Y") {
-      cell.getFormat().getFill().setColor("#C6EFCE"); // light green
-      cell.getFormat().getFont().setColor("#276221"); // dark green
+      cell.getFormat().getFill().setColor("#C6EFCE");
+      cell.getFormat().getFont().setColor("#276221");
     } else if (val === "N") {
-      cell.getFormat().getFill().setColor("#FFC7CE"); // light red
-      cell.getFormat().getFont().setColor("#9C0006"); // dark red
+      cell.getFormat().getFill().setColor("#FFC7CE");
+      cell.getFormat().getFont().setColor("#9C0006");
     } else {
-      cell.getFormat().getFill().setColor("#FFEB9C"); // light yellow
-      cell.getFormat().getFont().setColor("#9C5700"); // dark orange
+      cell.getFormat().getFill().setColor("#FFEB9C");
+      cell.getFormat().getFont().setColor("#9C5700");
     }
-
-    // Centre-align the symbol
     cell.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
   }
 
-  //Append a blank Notes column after the period column 
+  // Append blank Notes column
   const notesHeader = `${newHeader} Notes`;
-  const notesCol = T_table.addColumn(-1);
+  const notesCol    = T_table.addColumn(-1);
   notesCol.setName(notesHeader);
-  const gcr = notesCol.getRange();
-  gcr.getFormat().getFill().setColor("#ffffff");
-  gcr.getFormat().getFont().setColor("#000000");
-  
-  
-  //changing notes column range
-  const lastCol = T_table.getColumnByName(notesHeader);
-  console.log("column range");
-  const colstr = lastCol.getRangeBetweenHeaderAndTotal.toString;
-  //console.log(lastCol);
-  //colrng.getFormat().getFill().setColor(#ffffff);
+  notesCol.getRangeBetweenHeaderAndTotal().setValues(Array(actualRowCount).fill([""]));
 
+  // Count stopes by zone status
+  let countBlack  = 0;
+  let countRed    = 0;
+  let countTotal  = 0;
 
-
-  //colour blank cell to grey or just white depends on what looks better
-  for (let j = 0; j < rowCount; j++){
-    //const cells = newColRange.getCell(j, finalColCurrent);
-    //const vals = columnCellValues[j][finalColCurrent];
-      //cells.getFormat().getFill().setColor("#ffffff");
+  for (let i = 0; i < actualRowCount; i++) {
+    const zoneStatus = String(dataValues[i] ? dataValues[i][COL_ZONE_STATUS] : "").trim().toUpperCase();
+    countTotal++;
+    if (zoneStatus === "BLACK") countBlack++;
+    if (zoneStatus === "RED")   countRed++;
   }
 
-  if (rowCount > 0) {
-    notesCol.getRangeBetweenHeaderAndTotal().setValues(Array(rowCount).fill([""]));
+  // Write summary block above the KPI table
+  // Uses a 3-row x 2-column block starting at SUMMARY_ANCHOR.
+  // Row 1 = headers, Row 2 = values, Row 3 = last updated timestamp.
+  const T_sheet     = workbook.getWorksheet(T_table.getWorksheet().getName());
+  const anchorRange = T_sheet.getRange(SUMMARY_ANCHOR);
+  const anchorRow   = anchorRange.getRowIndex();    // 0-based
+  const anchorCol   = anchorRange.getColumnIndex(); // 0-based
+
+  // Helper to get a cell relative to the anchor
+  function summaryCell(rowOffset: number, colOffset: number): ExcelScript.Range {
+    return T_sheet.getCell(anchorRow + rowOffset, anchorCol + colOffset);
   }
 
-  // Save current state for next run 
+  // Header row
+  const headerLabels = ["Total Stopes", "BLACK", "RED"];
+  const headerColors = ["#D9E1F2", "#000000", "#FF0000"];
+  const headerFonts  = ["#000000", "#FFFFFF",  "#FFFFFF"];
+
+  for (let c = 0; c < headerLabels.length; c++) {
+    const cell = summaryCell(0, c);
+    cell.setValue(headerLabels[c]);
+    cell.getFormat().getFill().setColor(headerColors[c]);
+    cell.getFormat().getFont().setColor(headerFonts[c]);
+    cell.getFormat().getFont().setBold(true);
+    cell.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
+  }
+
+  // Value row
+  const counts      = [countTotal, countBlack, countRed];
+  const valueFills  = ["#EBF0FA", "#595959", "#FFE0E0"];
+  const valueFonts  = ["#000000", "#FFFFFF",  "#9C0006"];
+
+  for (let c = 0; c < counts.length; c++) {
+    const cell = summaryCell(1, c);
+    cell.setValue(counts[c]);
+    cell.getFormat().getFill().setColor(valueFills[c]);
+    cell.getFormat().getFont().setColor(valueFonts[c]);
+    cell.getFormat().getFont().setBold(true);
+    cell.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
+  }
+
+  // Timestamp row (spans all 3 columns, left-aligned)
+  const now       = new Date();
+  const timestamp = `Last updated: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+  const tsCell    = summaryCell(2, 0);
+  tsCell.setValue(timestamp);
+  tsCell.getFormat().getFont().setItalic(true);
+  tsCell.getFormat().getFont().setColor("#595959");
+  tsCell.getFormat().getFill().setColor("#FFFFFF");
+
+  // Persist stope state and updated stage order
   writeSavedState(stateSheet, currentStateList);
+  if (orderChanged) {
+    writeStageOrder(stateSheet, stageOrder);
+    console.log(`Stage order saved — ${stageOrder.length} total keys registered.`);
+  }
 
-  /*const passCount = passFail.filter(Boolean).length;
-  console.log(`Done — "${newHeader}" and "${notesHeader}" added. ${passCount}/${rowCount} stopes passed (≥${MIN_STEPS_FORWARD} stage steps forward).`);*/
+  const passCount = passFail.filter(Boolean).length;
+  console.log(`Done — "${newHeader}" and "${notesHeader}" added. ${passCount}/${actualRowCount} stopes passed (delta >= ${MIN_STEPS_FORWARD}). Total=${countTotal} BLACK=${countBlack} RED=${countRed}.`);
 }
