@@ -5,7 +5,7 @@ function main(workbook: ExcelScript.Workbook)
   const StateSheetName   = "_StageStateCache";
   const BaseColumnHeader = "Period";
 
-  // Column indices in the KPI table (0-based)
+  // Column indices in the KPI table (0-based) 
   const COL_ID_STOPE     = 0;
   const COL_DESIGN_STAGE = 2;
   const COL_SUB_PROCESS  = 3;
