@@ -1,4 +1,3 @@
-@@ -1,214 +1,22 @@
 # KPI
 # Current Stage: TESTING
 # checkStageProgress.ts — README
