@@ -4,7 +4,7 @@
 
 ## Overview
 
-This Office Script runs inside Excel and tracks whether each stope in the **KPI** table has progressed far enough through the design workflow between script runs. Each time it is run it adds two new columns to the KPI table — a **Period** result column (`Y` / `N` / `?`) and a blank **Notes** column for manual comments. The previous state of every stope is saved in a hidden sheet so that progress can be measured on the next run.
+This Office Script runs inside Excel and tracks whether each stope in the **KPI** table has progressed far enough through the design workflow between script runs. Each time it is run it adds two new columns to the KPI table — a **Period** result column (`Y` / `N` / `?`) and a blank **Notes** column for manual comments. The previous state of every stope is saved in a hidden sheet allowing progress to be measured on the next run.
 
 ---
 
