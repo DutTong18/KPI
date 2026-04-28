@@ -1,0 +1,88 @@
+function main(workbook: ExcelScript.Workbook) {
+  // Config 
+  const SourceSheet = "Stope Cadence";
+  const TargetSheet = "SchedulerData";
+  const SourceTableName = "Table2";
+  const TargetTableName = "KPI";
+
+  // Source column indices (0-based) to carry across
+  const IndexOfIdStope = 2;
+  const IndexOfUser = 7;
+  const IndexOfDesignStage = 21;
+  const IndexOfSubProcess = 22;
+  const IndexOfZoneStatus = 34;
+
+  // Only these indices will be copied — order here = column order in target table
+  const ColumnsToMove = [
+    IndexOfIdStope,
+    IndexOfUser,
+    IndexOfDesignStage,
+    IndexOfSubProcess,
+    IndexOfZoneStatus,
+  ];
+
+  // Zone status values to include
+  const FilterValues = ["BLACK", "RED"];
+
+  //  Setup 
+  const S_sheet = workbook.getWorksheet(SourceSheet);
+  if (!S_sheet) { console.log(`Source sheet "${SourceSheet}" not found.`); return; }
+
+  const S_table = workbook.getTable(SourceTableName);
+  if (!S_table) { console.log(`Source table "${SourceTableName}" not found.`); return; }
+
+  const T_sheet = workbook.getWorksheet(TargetSheet);
+  if (!T_sheet) { console.log(`Target sheet "${TargetSheet}" not found.`); return; }
+
+
+
+  // Build target table with exactly 5 columns (A–E) if it doesn't exist yet (may need to add count)
+  let T_table = workbook.getTable(TargetTableName);
+  if (!T_table) {
+    T_table = T_sheet.addTable("A25:E25", true);
+    T_table.setName(TargetTableName);
+
+  //adding Vlookups here 
+  var liveCell = "V42" //PlaceHolder
+  //Formula to be placed in cells
+    var liveDataFormula = "='Stope Cadence'!" + liveCell + "";
+    console.log(liveDataFormula);
+    
+
+    // Set header names to match the source columns being moved
+    const headers = ["ID Stope", "User", "Design Stage", "Sub Process", "Zone Status"];
+    T_table.getHeaderRowRange().setValues([headers]);
+  } else {
+    // Get the range of the table
+    const tblRange = T_table.getRange();
+    console.log(tblRange);
+    const coln = tblRange.getColumnCount();
+  }
+
+  //  Filter & slim rows 
+  const S_Range = S_table.getRangeBetweenHeaderAndTotal();
+  const DataRows = S_Range.getValues();
+
+  const RowsToMove: (number | string | boolean)[][] = [];
+
+
+
+  for (let i = 0; i < DataRows.length; i++) {
+    const zoneStatus = DataRows[i][IndexOfZoneStatus];
+
+    if (FilterValues.includes(String(zoneStatus))) {
+      // Extract only the 5 desired columns from this row
+      const slimRow = ColumnsToMove.map(colIdx => DataRows[i][colIdx]);
+      RowsToMove.push(slimRow);
+    }
+  }
+
+
+  if (RowsToMove.length === 0) {
+    console.log("No rows matched the filter criteria.");
+    return;
+  }
+
+  console.log(`Adding ${RowsToMove.length} row(s) to "${TargetTableName}".`);
+  T_table.addRows(-1, RowsToMove);
+}
