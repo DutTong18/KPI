@@ -1,18 +1,18 @@
-function main(workbook: ExcelScript.Workbook) {
-  // Config 
-  const SourceSheet = "Stope Cadence";
-  const TargetSheet = "SchedulerData";
+function main(workbook: ExcelScript.Workbook)
+{
+  // Config
+  const SourceSheet     = "Stope Cadence";
+  const TargetSheet     = "SchedulerData";
   const SourceTableName = "Table2";
   const TargetTableName = "KPI";
 
   // Source column indices (0-based) to carry across
-  const IndexOfIdStope = 2;
-  const IndexOfUser = 7;
+  const IndexOfIdStope     = 2;
+  const IndexOfUser        = 7;
   const IndexOfDesignStage = 21;
-  const IndexOfSubProcess = 22;
-  const IndexOfZoneStatus = 34;
+  const IndexOfSubProcess  = 22;
+  const IndexOfZoneStatus  = 34;
 
-  // Only these indices will be copied — order here = column order in target table
   const ColumnsToMove = [
     IndexOfIdStope,
     IndexOfUser,
@@ -24,7 +24,7 @@ function main(workbook: ExcelScript.Workbook) {
   // Zone status values to include
   const FilterValues = ["BLACK", "RED"];
 
-  //  Setup 
+  // Setup
   const S_sheet = workbook.getWorksheet(SourceSheet);
   if (!S_sheet) { console.log(`Source sheet "${SourceSheet}" not found.`); return; }
 
@@ -34,55 +34,74 @@ function main(workbook: ExcelScript.Workbook) {
   const T_sheet = workbook.getWorksheet(TargetSheet);
   if (!T_sheet) { console.log(`Target sheet "${TargetSheet}" not found.`); return; }
 
+  // Get the first data row index of the source table so formulas reference
+  // the correct absolute row numbers on the source sheet (1-based for formulas).
+  const S_dataStartRow = S_table.getHeaderRowRange().getRowIndex() + 2;
 
-
-  // Build target table with exactly 5 columns (A–E) if it doesn't exist yet (may need to add count)
+  // Get or create the KPI table
   let T_table = workbook.getTable(TargetTableName);
   if (!T_table) {
     T_table = T_sheet.addTable("A25:E25", true);
     T_table.setName(TargetTableName);
-
-  //adding Vlookups here 
-  var liveCell = "V42" //PlaceHolder
-  //Formula to be placed in cells
-    var liveDataFormula = "='Stope Cadence'!" + liveCell + "";
-    console.log(liveDataFormula);
-    
-
-    // Set header names to match the source columns being moved
     const headers = ["ID Stope", "User", "Design Stage", "Sub Process", "Zone Status"];
     T_table.getHeaderRowRange().setValues([headers]);
   } else {
-    // Get the range of the table
-    const tblRange = T_table.getRange();
-    console.log(tblRange);
-    const coln = tblRange.getColumnCount();
+    // Clear and collapse existing data rows so the table is rebuilt cleanly each run
+    const rowCount = T_table.getRangeBetweenHeaderAndTotal().getRowCount();
+    for (let r = rowCount - 1; r > 0; r--) {
+      T_table.deleteRowsAt(r, 1);
+    }
+    T_table.getRangeBetweenHeaderAndTotal().getRow(0).clear(ExcelScript.ClearType.all);
   }
 
-  //  Filter & slim rows 
-  const S_Range = S_table.getRangeBetweenHeaderAndTotal();
-  const DataRows = S_Range.getValues();
-
-  const RowsToMove: (number | string | boolean)[][] = [];
-
-
+  // Filter source rows and build formula rows
+  const DataRows    = S_table.getRangeBetweenHeaderAndTotal().getValues();
+  const formulaRows: string[][] = [];
 
   for (let i = 0; i < DataRows.length; i++) {
-    const zoneStatus = DataRows[i][IndexOfZoneStatus];
+    if (!FilterValues.includes(String(DataRows[i][IndexOfZoneStatus]))) continue;
 
-    if (FilterValues.includes(String(zoneStatus))) {
-      // Extract only the 5 desired columns from this row
-      const slimRow = ColumnsToMove.map(colIdx => DataRows[i][colIdx]);
-      RowsToMove.push(slimRow);
-    }
+    // Absolute source row number (1-based) for this data row
+    const sourceRow  = S_dataStartRow + i;
+
+    const formulaRow = ColumnsToMove.map(colIdx => {
+      const col = columnIndexToLetter(colIdx + 1); // colIdx is 0-based; +1 for 1-based Excel cols
+      return `='${SourceSheet}'!$${col}$${sourceRow}`;
+    });
+
+    formulaRows.push(formulaRow);
   }
 
-
-  if (RowsToMove.length === 0) {
+  if (formulaRows.length === 0) {
     console.log("No rows matched the filter criteria.");
     return;
   }
 
-  console.log(`Adding ${RowsToMove.length} row(s) to "${TargetTableName}".`);
-  T_table.addRows(-1, RowsToMove);
+  // Write the first formula row into the placeholder row the table already holds
+  T_table.getRangeBetweenHeaderAndTotal().getRow(0).setFormulas([formulaRows[0]]);
+
+  // Add and write remaining rows
+  if (formulaRows.length > 1) {
+    // addRows accepts value arrays — add placeholders then overwrite with formulas
+    const placeholders = formulaRows.slice(1).map(row => row.map(() => ""));
+    T_table.addRows(-1, placeholders as (string | number | boolean)[][]);
+
+    const dataRange = T_table.getRangeBetweenHeaderAndTotal();
+    for (let r = 1; r < formulaRows.length; r++) {
+      dataRange.getRow(r).setFormulas([formulaRows[r]]);
+    }
+  }
+
+  console.log(`KPI table rebuilt with ${formulaRows.length} live formula row(s).`);
+}
+
+// Convert a 1-based column number to an Excel column letter (1=A, 27=AA, etc.)
+function columnIndexToLetter(colNum: number): string {
+  let letter = "";
+  while (colNum > 0) {
+    const remainder = (colNum - 1) % 26;
+    letter = String.fromCharCode(65 + remainder) + letter;
+    colNum = Math.floor((colNum - 1) / 26);
+  }
+  return letter;
 }
