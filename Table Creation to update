@@ -3,10 +3,9 @@ function main(workbook: ExcelScript.Workbook)
   // Config
   const SourceSheet     = "Stope Cadence";
   const TargetSheet     = "SchedulerData";
-  const SourceTableName = "Table2";
   const TargetTableName = "KPI";
 
-  // Source column indices (0-based) to carry across
+  // Source column indices (0-based)
   const IndexOfIdStope     = 2;
   const IndexOfUser        = 7;
   const IndexOfDesignStage = 21;
@@ -28,15 +27,18 @@ function main(workbook: ExcelScript.Workbook)
   const S_sheet = workbook.getWorksheet(SourceSheet);
   if (!S_sheet) { console.log(`Source sheet "${SourceSheet}" not found.`); return; }
 
-  const S_table = workbook.getTable(SourceTableName);
-  if (!S_table) { console.log(`Source table "${SourceTableName}" not found.`); return; }
-
   const T_sheet = workbook.getWorksheet(TargetSheet);
   if (!T_sheet) { console.log(`Target sheet "${TargetSheet}" not found.`); return; }
 
-  // Get the first data row index of the source table so formulas reference
-  // the correct absolute row numbers on the source sheet (1-based for formulas).
-  const S_dataStartRow = S_table.getHeaderRowRange().getRowIndex() + 2;
+  // Read source sheet as a plain range — no table object required.
+  // getUsedRange() covers all rows that have data, header row included.
+  const usedRange = S_sheet.getUsedRange();
+  if (!usedRange) { console.log(`Source sheet "${SourceSheet}" appears to be empty.`); return; }
+
+  const allValues      = usedRange.getValues();
+  const S_firstDataRow = usedRange.getRowIndex() + 1; // 0-based sheet row of first DATA row (skip header)
+  // S_firstDataRow in 1-based formula terms:
+  const S_formulaStartRow = S_firstDataRow + 1; // +1 converts 0-based to 1-based Excel row number
 
   // Get or create the KPI table
   let T_table = workbook.getTable(TargetTableName);
@@ -46,7 +48,7 @@ function main(workbook: ExcelScript.Workbook)
     const headers = ["ID Stope", "User", "Design Stage", "Sub Process", "Zone Status"];
     T_table.getHeaderRowRange().setValues([headers]);
   } else {
-    // Clear and collapse existing data rows so the table is rebuilt cleanly each run
+    // Clear and collapse existing data rows so the table rebuilds cleanly each run
     const rowCount = T_table.getRangeBetweenHeaderAndTotal().getRowCount();
     for (let r = rowCount - 1; r > 0; r--) {
       T_table.deleteRowsAt(r, 1);
@@ -54,18 +56,18 @@ function main(workbook: ExcelScript.Workbook)
     T_table.getRangeBetweenHeaderAndTotal().getRow(0).clear(ExcelScript.ClearType.all);
   }
 
-  // Filter source rows and build formula rows
-  const DataRows    = S_table.getRangeBetweenHeaderAndTotal().getValues();
+  // Row 0 of allValues is the header row — data starts at index 1
   const formulaRows: string[][] = [];
 
-  for (let i = 0; i < DataRows.length; i++) {
-    if (!FilterValues.includes(String(DataRows[i][IndexOfZoneStatus]))) continue;
+  for (let i = 1; i < allValues.length; i++) {
+    const zoneStatus = String(allValues[i][IndexOfZoneStatus]).trim();
+    if (!FilterValues.includes(zoneStatus)) continue;
 
-    // Absolute source row number (1-based) for this data row
-    const sourceRow  = S_dataStartRow + i;
+    // 1-based Excel row number for this source data row
+    const sourceRow = S_formulaStartRow + (i - 1);
 
     const formulaRow = ColumnsToMove.map(colIdx => {
-      const col = columnIndexToLetter(colIdx + 1); // colIdx is 0-based; +1 for 1-based Excel cols
+      const col = columnIndexToLetter(colIdx + 1); // colIdx is 0-based; +1 for Excel 1-based cols
       return `='${SourceSheet}'!$${col}$${sourceRow}`;
     });
 
@@ -77,12 +79,11 @@ function main(workbook: ExcelScript.Workbook)
     return;
   }
 
-  // Write the first formula row into the placeholder row the table already holds
+  // Write first formula row into the placeholder row the table already holds
   T_table.getRangeBetweenHeaderAndTotal().getRow(0).setFormulas([formulaRows[0]]);
 
-  // Add and write remaining rows
+  // Add remaining rows as blank placeholders then overwrite with formulas
   if (formulaRows.length > 1) {
-    // addRows accepts value arrays — add placeholders then overwrite with formulas
     const placeholders = formulaRows.slice(1).map(row => row.map(() => ""));
     T_table.addRows(-1, placeholders as (string | number | boolean)[][]);
 
