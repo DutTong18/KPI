@@ -303,7 +303,7 @@ A final log message summarises the run for the Office Scripts console.
 
 ---
 
-## Helper Functions Inside `main()`
+## Functions Inside `main()`
 
 These are nested inside `main()` so they can directly reference the configuration constants without needing parameters for every value.
 
