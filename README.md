@@ -478,6 +478,11 @@ The new stage takes effect on the next run.
 
 ---
 
+### Changes to make
+1. IFR state handling, currently still tracks stopes that are red or black in IFR
+2. continued testing and refining as required
+
+
 ## Summary of Files Created and Maintained
 
 | Sheet / Table | Visibility | Purpose |
