@@ -1,4 +1,4 @@
-# checkStageProgress.ts — README
+# checkStageProgress.ts README
 
 ## Overview
 
