@@ -13,7 +13,7 @@ The script enforces a maximum of **7 date check columns** in the live table. Whe
 
 ---
 
-## How It Works — Step by Step
+## How It Works 
 
 ### 1. Configuration
 
