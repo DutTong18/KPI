@@ -107,7 +107,7 @@ For each row, the script:
 
 ---
 
-### 6. Date-Stamped Check Columns
+### 6. Date Stamped Check Columns
 
 The new check column is named with today's date in `DD-MM-YYYY` format (e.g. `12-05-2026`). A paired blank `12-05-2026 Notes` column is added immediately after for manual comments.
 
@@ -129,7 +129,7 @@ The hidden state cache **persists across rotation**, so the first check on a new
 
 ### 8. Summary Block
 
-A 3-row block is written above the KPI table at `SummaryAnchor` (`A1` by default):
+A 3 row block is written above the KPI table at `SummaryAnchor` (`A1` by default):
 
 | Total Stopes | BLACK | RED |
 |---|---|---|
@@ -140,7 +140,7 @@ The values overwrite in place each run so the block does not grow over time.
 
 ---
 
-### 9. State Persistence — The Hidden Cache Sheet
+### 9. State Persistence, The Hidden Cache Sheet
 
 The script maintains a sheet named `_StageStateCache` set to `veryHidden`. Layout:
 
@@ -148,13 +148,13 @@ The script maintains a sheet named `_StageStateCache` set to `veryHidden`. Layou
 |---|---|
 | Stope state — `StopeID / DesignStage / SubProcess` | Stage order list (one key per row) |
 
-Both halves are read at the start of each run and re-written at the end.
+Both halves are read at the start of each run and rewritten at the end.
 
 ---
 
 ---
 
-## Code Walkthrough — Section by Section
+## Code Walkthrough  Section by Section
 
 The script is organised into a `main()` function containing 13 numbered steps, followed by helper functions. The two standalone helpers at the bottom of the file (`columnLetterFromIndex` and `rowFromAnchor`) live outside `main()` because they take no script state and could be reused independently.
 
