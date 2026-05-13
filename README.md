@@ -483,6 +483,65 @@ The new stage takes effect on the next run.
 2. continued testing and refining as required
 3. improve flexibility
 
+### TODO from Meeting (13/05/2026)
+Black & red 1 vs 2 stages
+MINIMUM_STEPS_FORWARD_BLACK = 2
+MINIMUM_STEPS_FORWARD_RED = 1
+Split blackRedIds -> blackIds[] redIds[] 
+
+If Previous stage is new 
+
+by user number of non progressions total for the forecast 
+half year or 
+
+manually set forecast*
+Remove automatic forecast save ability after saved state (add cell if yes then reset)
+
+new archive sheet every forecast manual*
+
+manual change function* 
+Flexibility 
+two cols; notes & drop down list with standard reasons
+
+
+
+end of jan feb 
+on in early may 
+start first of July and stop on first of June
+
+look at column counts no on the count
+
+people may forget to update sheet on time 
+
+
+archiving new script for a
+
+goes and comes back 
+
+green not there comes back
+
+new stopes
+
+
+improved error handling 
+? = unsure 
+New = new Data 
+^^Test
+Manual Updates**
+
+Red last week and still advanced a stage 
+
+
+other fringe cases 
+
+
+predo put in buckets...
+
+
+Future functionality
+engineers #of non progressions
+
+
 
 ## Summary of Files Created and Maintained
 
