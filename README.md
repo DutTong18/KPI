@@ -478,9 +478,10 @@ The new stage takes effect on the next run.
 
 ---
 
-### Changes to make
+### Changes to be made
 1. IFR state handling, currently still tracks stopes that are red or black in IFR
 2. continued testing and refining as required
+3. improve flexibility
 
 
 ## Summary of Files Created and Maintained
