@@ -1,427 +1,447 @@
-function main(workbook: ExcelScript.Workbook) {
-    // Config
-    const SourceSheet = "Stope Cadence";
-    const TargetSheet = "SchedulerData";
-    const TargetTableName = "KPI";
-    const StateSheetName = "_StageStateCache";
-    const TableAnchor = "A25";
-    const SummaryAnchor = "A1";
+function main(workbook: ExcelScript.Workbook)
+{
+  // Config
+  const SourceSheet     = "Stope Cadence";
+  const TargetSheet     = "SchedulerData";
+  const TargetTableName = "KPI";
+  const StateSheetName  = "_StageStateCache";
+  const TableAnchor     = "A25";
+  const SummaryAnchor   = "A1";
 
-    // Source column indices (0-based)
-    const IndexOfIdStope = 2;  // column C
-    const IndexOfUser = 7;  // column H
-    const IndexOfDesignStage = 21; // column V
-    const IndexOfSubProcess = 22; // column W
-    const IndexOfZoneStatus = 34; // column AI
+  // Source column indices (0-based)
+  const IndexOfIdStope     = 2;  // column C
+  const IndexOfUser        = 7;  // column H
+  const IndexOfDesignStage = 21; // column V
+  const IndexOfSubProcess  = 22; // column W
+  const IndexOfZoneStatus  = 34; // column AI
 
-    // KPI table base columns (in order)
-    const BASE_HEADERS = ["ID Stope", "User", "Design Stage", "Sub Process", "Zone Status"];
-    const KPI_COL_ID = 0;
-    const KPI_COL_STAGE = 2;
-    const KPI_COL_SUB = 3;
-    const KPI_COL_ZONE = 4;
+  // KPI table base columns (in order)
+  const BASE_HEADERS  = ["ID Stope", "User", "Design Stage", "Sub Process", "Zone Status"];
+  const KPI_COL_ID    = 0;
+  const KPI_COL_USER  = 1;
+  const KPI_COL_STAGE = 2;
+  const KPI_COL_SUB   = 3;
+  const KPI_COL_ZONE  = 4;
 
-    // Behaviour
-    const FilterValues = ["BLACK", "RED"];
-    const MIN_STEPS_FORWARD = 2;
-    const MAX_CHECKS = 7;
+  // Behaviour — per-status thresholds for a PASS (Y)
+  const FilterValues        = ["BLACK", "RED"];
+  const STEPS_FORWARD_RED   = 1; // RED stopes pass with one stage forward
+  const STEPS_FORWARD_BLACK = 2; // BLACK stopes need two stages forward
 
-    // Seed stage order — used only on the first run
-    const SEED_ORDER: string[] = [
-        "Re-Sequenced::", "Not_Started::", "Geology_Review::",
-        "Draft_Design::", "Draft_Design::0%", "Draft_Design::25%", "Draft_Design::50%", "Draft_Design::75%",
-        "External_Review::", "External_Review::0%", "External_Review::25%", "External_Review::50%", "External_Review::75%",
-        "Concept::",
-        "Shape_Review::", "Shape_Review::Wait on Meeting", "Shape_Review::Updates Post ISR",
-        "Final_Design::", "Final_Design::0%", "Final_Design::25%", "Final_Design::50%", "Final_Design::75%",
-        "Peer_Review::", "Peer_Review::Wait on Meeting", "Peer_Review::Updates Post PR",
-        "Direction_Meeting::", "Direction_Meeting::Wait on Meeting", "Direction_Meeting::Updates Post meeting",
-        "IFR::", "02_Technical::", "03_Operations::", "04_Superintendent::", "05_Manager::", "06_Upload::", "COMPLETE::",
+  // Seed stage order — used only on the first run
+  const SEED_ORDER: string[] = [
+    "Re-Sequenced::", "Not_Started::", "Geology_Review::",
+    "Draft_Design::", "Draft_Design::0%", "Draft_Design::25%", "Draft_Design::50%", "Draft_Design::75%",
+    "External_Review::", "External_Review::0%", "External_Review::25%", "External_Review::50%", "External_Review::75%",
+    "Concept::",
+    "Shape_Review::", "Shape_Review::Wait on Meeting", "Shape_Review::Updates Post ISR",
+    "Final_Design::", "Final_Design::0%", "Final_Design::25%", "Final_Design::50%", "Final_Design::75%",
+    "Peer_Review::", "Peer_Review::Wait on Meeting", "Peer_Review::Updates Post PR",
+    "Direction_Meeting::", "Direction_Meeting::Wait on Meeting", "Direction_Meeting::Updates Post meeting",
+    "IFR::", "02_Technical::", "03_Operations::", "04_Superintendent::", "05_Manager::", "06_Upload::", "COMPLETE::",
+  ];
+
+  // Date header for this run (DD-MM-YYYY)
+  const today      = new Date();
+  const dd         = String(today.getDate()).padStart(2, "0");
+  const mm         = String(today.getMonth() + 1).padStart(2, "0");
+  const yyyy       = today.getFullYear();
+  const baseHeader = `${dd}-${mm}-${yyyy}`;
+
+  // STEP 1 — sheet sanity
+  const S_sheet = workbook.getWorksheet(SourceSheet);
+  if (!S_sheet) { console.log(`Source sheet "${SourceSheet}" not found.`); return; }
+
+  const T_sheet = workbook.getWorksheet(TargetSheet);
+  if (!T_sheet) { console.log(`Target sheet "${TargetSheet}" not found.`); return; }
+
+  // STEP 2 — read source, collect BLACK/RED stope IDs
+  const usedRange = S_sheet.getUsedRange();
+  if (!usedRange) { console.log(`Source sheet "${SourceSheet}" appears to be empty.`); return; }
+
+  const sourceValues = usedRange.getValues();
+  const blackRedIds: string[] = [];
+  const seenIds = new Set<string>();
+  let countBlack = 0;
+  let countRed   = 0;
+
+  for (let i = 1; i < sourceValues.length; i++) {
+    const id   = String(sourceValues[i][IndexOfIdStope]).trim();
+    const zone = String(sourceValues[i][IndexOfZoneStatus]).trim().toUpperCase();
+    if (!id) continue;
+    if (!FilterValues.includes(zone)) continue;
+    if (seenIds.has(id)) continue;
+
+    seenIds.add(id);
+    blackRedIds.push(id);
+    if (zone === "BLACK") countBlack++;
+    if (zone === "RED")   countRed++;
+  }
+
+  if (blackRedIds.length === 0) {
+    console.log("No BLACK or RED stopes found in source.");
+    return;
+  }
+
+  // STEP 3 — get or create the KPI table
+  let T_table = workbook.getTable(TargetTableName);
+  if (!T_table) {
+    T_table = T_sheet.addTable(`${TableAnchor}:${columnLetterFromIndex(BASE_HEADERS.length)}${rowFromAnchor(TableAnchor)}`, true);
+    T_table.setName(TargetTableName);
+    T_table.getHeaderRowRange().setValues([BASE_HEADERS]);
+
+    const firstRow = T_table.getRangeBetweenHeaderAndTotal().getRow(0);
+    firstRow.setValues([buildBaseRow(blackRedIds[0])]);
+    applyLookupFormulasToRow(firstRow);
+
+    if (blackRedIds.length > 1) {
+      const rest = blackRedIds.slice(1).map(id => buildBaseRow(id));
+      T_table.addRows(-1, rest);
+
+      const dataRange = T_table.getRangeBetweenHeaderAndTotal();
+      for (let r = 1; r < dataRange.getRowCount(); r++) {
+        applyLookupFormulasToRow(dataRange.getRow(r));
+      }
+    }
+    console.log(`Created KPI table with ${blackRedIds.length} stopes.`);
+  }
+
+  // STEP 4 — add any new BLACK/RED stopes not already in the KPI table
+  const idCol   = T_table.getColumnByName(BASE_HEADERS[KPI_COL_ID]);
+  const idRange = idCol.getRangeBetweenHeaderAndTotal();
+  const existingIds = new Set<string>();
+  if (idRange.getRowCount() > 0) {
+    const idValues = idRange.getValues();
+    for (const row of idValues) {
+      const v = String(row[0]).trim();
+      if (v) existingIds.add(v);
+    }
+  }
+
+  const newStopes = blackRedIds.filter(id => !existingIds.has(id));
+  if (newStopes.length > 0) {
+    const newRows = newStopes.map(id => buildBaseRow(id));
+    T_table.addRows(-1, newRows);
+
+    const dataRange = T_table.getRangeBetweenHeaderAndTotal();
+    const total = dataRange.getRowCount();
+    for (let r = total - newStopes.length; r < total; r++) {
+      applyLookupFormulasToRow(dataRange.getRow(r));
+    }
+    console.log(`Added ${newStopes.length} new stope(s): ${newStopes.join(", ")}`);
+  }
+
+  // STEP 5 — load cache (state and stage order)
+  const stateSheet = getStateSheet();
+  const savedState = readSavedState(stateSheet);
+  const stageOrder = readStageOrder(stateSheet);
+
+  const stageIdx: { [key: string]: number } = {};
+  stageOrder.forEach((k, i) => { stageIdx[k] = i; });
+
+  // STEP 6 — read current KPI data (after the lookup formulas have calculated)
+  T_sheet.getRange("A1").getFormat().setRowHeight(T_sheet.getRange("A1").getFormat().getRowHeight()); // recalc nudge
+
+  const kpiData     = T_table.getRangeBetweenHeaderAndTotal();
+  const kpiValues   = kpiData.getValues();
+  const kpiRowCount = kpiData.getRowCount();
+
+  // Register any new stage keys
+  let orderChanged = false;
+  for (let i = 0; i < kpiRowCount; i++) {
+    const key = stageKey(String(kpiValues[i][KPI_COL_STAGE]), String(kpiValues[i][KPI_COL_SUB]));
+    if (stageIdx[key] === undefined) {
+      stageIdx[key] = stageOrder.length;
+      stageOrder.push(key);
+      orderChanged = true;
+      console.log(`New stage registered: "${key}"`);
+    }
+  }
+
+  // STEP 7 — evaluate Y / N / new for each row
+  const currentStateList: { id: string; designStage: string; subProcess: string }[] = [];
+  const cellValues: string[][] = [];
+  const userNonProgress: { [user: string]: number } = {};
+  let passCount = 0;
+  let nCount    = 0;
+
+  for (let i = 0; i < kpiRowCount; i++) {
+    const id    = String(kpiValues[i][KPI_COL_ID]).trim();
+    const user  = String(kpiValues[i][KPI_COL_USER]).trim() || "(unassigned)";
+    const stage = String(kpiValues[i][KPI_COL_STAGE]).trim();
+    const sub   = String(kpiValues[i][KPI_COL_SUB]).trim();
+    const zone  = String(kpiValues[i][KPI_COL_ZONE]).trim().toUpperCase();
+
+    currentStateList.push({ id, designStage: stage, subProcess: sub });
+
+    const currKey = stageKey(stage, sub);
+    const currI   = stageIdx[currKey] ?? -1;
+    const prev    = savedState[id];
+
+    // First time seeing this stope — mark as "new"
+    if (!prev) {
+      cellValues.push(["new"]);
+      continue;
+    }
+
+    const prevKey = stageKey(prev.designStage, prev.subProcess);
+    const prevI   = stageIdx[prevKey] ?? -1;
+    if (currI === -1 || prevI === -1) {
+      cellValues.push(["?"]);
+      continue;
+    }
+
+    // Per-status threshold: RED needs 1 forward, BLACK needs 2
+    const threshold = zone === "RED" ? STEPS_FORWARD_RED : STEPS_FORWARD_BLACK;
+    const pass      = (currI - prevI) >= threshold;
+
+    cellValues.push([pass ? "Y" : "N"]);
+    if (pass) {
+      passCount++;
+    } else {
+      nCount++;
+      userNonProgress[user] = (userNonProgress[user] || 0) + 1;
+    }
+  }
+
+  // STEP 8 — generate a unique date header for this run
+  let dateHeader = baseHeader;
+  let suffix = 2;
+  const headersNow = T_table.getColumns().map(c => c.getName());
+  while (headersNow.includes(dateHeader)) {
+    dateHeader = `${baseHeader} (${suffix})`;
+    suffix++;
+  }
+
+  // STEP 9 — append the date column and apply colour formatting
+  const dateCol      = T_table.addColumn(-1);
+  dateCol.setName(dateHeader);
+  const dateColRange = dateCol.getRangeBetweenHeaderAndTotal();
+  const actualRows   = dateColRange.getRowCount();
+
+  while (cellValues.length < actualRows) cellValues.push(["new"]);
+  dateColRange.setValues(cellValues.slice(0, actualRows));
+
+  for (let i = 0; i < actualRows; i++) {
+    const cell = dateColRange.getCell(i, 0);
+    const v    = (cellValues[i] ?? ["new"])[0];
+
+    if (v === "Y") {
+      cell.getFormat().getFill().setColor("#C6EFCE");
+      cell.getFormat().getFont().setColor("#276221");
+    } else if (v === "N") {
+      cell.getFormat().getFill().setColor("#FFC7CE");
+      cell.getFormat().getFont().setColor("#9C0006");
+    } else if (v === "new") {
+      cell.getFormat().getFill().setColor("#DDEBF7");
+      cell.getFormat().getFont().setColor("#1F4E79");
+      cell.getFormat().getFont().setItalic(true);
+    } else {
+      cell.getFormat().getFill().setColor("#FFEB9C");
+      cell.getFormat().getFont().setColor("#9C5700");
+    }
+    cell.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
+  }
+
+  // STEP 10 — append paired blank Notes column
+  const notesHeader = `${dateHeader} Notes`;
+  const notesCol    = T_table.addColumn(-1);
+  notesCol.setName(notesHeader);
+  notesCol.getRangeBetweenHeaderAndTotal().setValues(Array(actualRows).fill([""]));
+
+  // STEP 11 — summary block above the KPI table
+  writeSummaryBlock(T_sheet, SummaryAnchor, kpiRowCount, countBlack, countRed, today);
+
+  // STEP 12 — per-user non-progression breakdown
+  writeUserBreakdown(T_sheet, SummaryAnchor, userNonProgress, nCount);
+
+  // STEP 13 — persist state and stage order
+  writeSavedState(stateSheet, currentStateList);
+  if (orderChanged) writeStageOrder(stateSheet, stageOrder);
+
+  console.log(`Done — "${dateHeader}" added. ${passCount} passed, ${nCount} non-progressions across ${kpiRowCount} stopes. Total=${kpiRowCount} BLACK=${countBlack} RED=${countRed}.`);
+
+  // Helpers scoped to main
+
+  function buildBaseRow(id: string): (string)[] {
+    return [id, "", "", "", ""];
+  }
+
+  function applyLookupFormulasToRow(rowRange: ExcelScript.Range): void {
+    const lookups = [
+      buildLookupFormula(IndexOfUser),
+      buildLookupFormula(IndexOfDesignStage),
+      buildLookupFormula(IndexOfSubProcess),
+      buildLookupFormula(IndexOfZoneStatus),
     ];
+    for (let c = 0; c < lookups.length; c++) {
+      rowRange.getCell(0, c + 1).setFormula(lookups[c]);
+    }
+  }
 
-    // Date header for this run (DD-MM-YYYY)
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, "0");
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const yyyy = today.getFullYear();
-    const baseHeader = `${dd}-${mm}-${yyyy}`;
+  function buildLookupFormula(sourceColIdx: number): string {
+    const lookupCol = columnLetterFromIndex(sourceColIdx + 1);
+    const idCol     = columnLetterFromIndex(IndexOfIdStope + 1);
+    return `=IFERROR(INDEX('${SourceSheet}'!${lookupCol}:${lookupCol},MATCH([@[${BASE_HEADERS[KPI_COL_ID]}]],'${SourceSheet}'!${idCol}:${idCol},0)),"")`;
+  }
 
-    // STEP 1 — sheet sanity
-    const S_sheet = workbook.getWorksheet(SourceSheet);
-    if (!S_sheet) { console.log(`Source sheet "${SourceSheet}" not found.`); return; }
+  function stageKey(designStage: string, subProcess: string): string {
+    return `${designStage.trim()}::${subProcess.trim()}`;
+  }
 
-    const T_sheet = workbook.getWorksheet(TargetSheet);
-    if (!T_sheet) { console.log(`Target sheet "${TargetSheet}" not found.`); return; }
+  function getStateSheet(): ExcelScript.Worksheet {
+    let sheet = workbook.getWorksheet(StateSheetName);
+    if (!sheet) {
+      sheet = workbook.addWorksheet(StateSheetName);
+      sheet.setVisibility(ExcelScript.SheetVisibility.veryHidden);
+      sheet.getRange("A1:C1").setValues([["StopeID", "DesignStage", "SubProcess"]]);
+      sheet.getRange("E1").setValue("StageOrder");
+    }
+    return sheet;
+  }
 
-    // STEP 2 — read source, collect BLACK/RED stope IDs
-    const usedRange = S_sheet.getUsedRange();
-    if (!usedRange) { console.log(`Source sheet "${SourceSheet}" appears to be empty.`); return; }
+  function readStageOrder(sheet: ExcelScript.Worksheet): string[] {
+    const used = sheet.getUsedRange();
+    if (!used) return [...SEED_ORDER];
+    const values = used.getValues();
+    const order: string[] = [];
+    for (let i = 1; i < values.length; i++) {
+      const key = values[i][4];
+      if (key !== undefined && key !== null && String(key).trim() !== "") {
+        order.push(String(key).trim());
+      }
+    }
+    return order.length > 0 ? order : [...SEED_ORDER];
+  }
 
-    const sourceValues = usedRange.getValues();
-    const blackRedIds: string[] = [];
-    const seenIds = new Set<string>();
-    let countBlack = 0;
-    let countRed = 0;
+  function writeStageOrder(sheet: ExcelScript.Worksheet, order: string[]): void {
+    sheet.getRange(`E2:E${order.length + 20}`).clear();
+    if (order.length === 0) return;
+    sheet.getRange(`E2:E${1 + order.length}`).setValues(order.map(k => [k]));
+  }
 
-    // Row 0 is header — start from row 1
-    for (let i = 1; i < sourceValues.length; i++) {
-        const id = String(sourceValues[i][IndexOfIdStope]).trim();
-        const zone = String(sourceValues[i][IndexOfZoneStatus]).trim().toUpperCase();
-        if (!id) continue;
-        if (!FilterValues.includes(zone)) continue;
-        if (seenIds.has(id)) continue;
+  function readSavedState(sheet: ExcelScript.Worksheet): { [id: string]: { designStage: string; subProcess: string } } {
+    const used = sheet.getUsedRange();
+    if (!used) return {};
+    const values = used.getValues();
+    const state: { [id: string]: { designStage: string; subProcess: string } } = {};
+    for (let i = 1; i < values.length; i++) {
+      const id = String(values[i][0]).trim();
+      const ds = String(values[i][1]).trim();
+      const sp = String(values[i][2]).trim();
+      if (id && id !== "undefined") state[id] = { designStage: ds, subProcess: sp };
+    }
+    return state;
+  }
 
-        seenIds.add(id);
-        blackRedIds.push(id);
-        if (zone === "BLACK") countBlack++;
-        if (zone === "RED") countRed++;
+  function writeSavedState(sheet: ExcelScript.Worksheet, list: { id: string; designStage: string; subProcess: string }[]): void {
+    const used = sheet.getUsedRange();
+    if (used) sheet.getRange(`A2:C${used.getRowCount() + 10}`).clear();
+    if (list.length === 0) return;
+    sheet.getRange(`A2:C${1 + list.length}`).setValues(list.map(s => [s.id, s.designStage, s.subProcess]));
+  }
+
+  function writeSummaryBlock(sheet: ExcelScript.Worksheet, anchor: string, total: number, black: number, red: number, runDate: Date): void {
+    const a       = sheet.getRange(anchor);
+    const baseRow = a.getRowIndex();
+    const baseCol = a.getColumnIndex();
+    const cell = (r: number, c: number) => sheet.getCell(baseRow + r, baseCol + c);
+
+    const labels  = ["Total Stopes", "BLACK", "RED"];
+    const lblFill = ["#D9E1F2", "#000000", "#FF0000"];
+    const lblFont = ["#000000", "#FFFFFF", "#FFFFFF"];
+    for (let c = 0; c < 3; c++) {
+      const x = cell(0, c);
+      x.setValue(labels[c]);
+      x.getFormat().getFill().setColor(lblFill[c]);
+      x.getFormat().getFont().setColor(lblFont[c]);
+      x.getFormat().getFont().setBold(true);
+      x.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
     }
 
-    if (blackRedIds.length === 0) {
-        console.log("No BLACK or RED stopes found in source.");
-        return;
+    const counts  = [total, black, red];
+    const valFill = ["#EBF0FA", "#595959", "#FFE0E0"];
+    const valFont = ["#000000", "#FFFFFF", "#9C0006"];
+    for (let c = 0; c < 3; c++) {
+      const x = cell(1, c);
+      x.setValue(counts[c]);
+      x.getFormat().getFill().setColor(valFill[c]);
+      x.getFormat().getFont().setColor(valFont[c]);
+      x.getFormat().getFont().setBold(true);
+      x.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
     }
 
-    // STEP 3 — get or create the KPI table
-    let T_table = workbook.getTable(TargetTableName);
-    if (!T_table) {
-        T_table = T_sheet.addTable(`${TableAnchor}:${columnLetterFromIndex(BASE_HEADERS.length)}${rowFromAnchor(TableAnchor)}`, true);
-        T_table.setName(TargetTableName);
-        T_table.getHeaderRowRange().setValues([BASE_HEADERS]);
+    const ts = cell(2, 0);
+    ts.setValue(`Last updated: ${runDate.toLocaleDateString()} ${runDate.toLocaleTimeString()}`);
+    ts.getFormat().getFont().setItalic(true);
+    ts.getFormat().getFont().setColor("#595959");
+  }
 
-        // Seed the placeholder data row with the first stope and its lookup formulas
-        const firstRow = T_table.getRangeBetweenHeaderAndTotal().getRow(0);
-        firstRow.setValues([buildBaseRow(blackRedIds[0])]);
-        applyLookupFormulasToRow(firstRow);
+  function writeUserBreakdown(sheet: ExcelScript.Worksheet, anchor: string, breakdown: { [user: string]: number }, totalN: number): void {
+    const a       = sheet.getRange(anchor);
+    const baseRow = a.getRowIndex() + 4;  // 1 blank row after the summary block (which occupies rows 0-2)
+    const baseCol = a.getColumnIndex();
+    const cell = (r: number, c: number) => sheet.getCell(baseRow + r, baseCol + c);
 
-        // Add remaining stopes
-        if (blackRedIds.length > 1) {
-            const rest = blackRedIds.slice(1).map(id => buildBaseRow(id));
-            T_table.addRows(-1, rest);
+    // Clear a generous area first so old rows from previous runs are not left behind
+    sheet.getRangeByIndexes(baseRow, baseCol, 100, 2).clear(ExcelScript.ClearType.contents);
+    sheet.getRangeByIndexes(baseRow, baseCol, 100, 2).getFormat().getFill().clear();
 
-            const dataRange = T_table.getRangeBetweenHeaderAndTotal();
-            for (let r = 1; r < dataRange.getRowCount(); r++) {
-                applyLookupFormulasToRow(dataRange.getRow(r));
-            }
-        }
-        console.log(`Created KPI table with ${blackRedIds.length} stopes.`);
+    // Section title
+    const titleCell = cell(0, 0);
+    titleCell.setValue(`Non-Progressions by User (this run: ${totalN} total)`);
+    titleCell.getFormat().getFont().setBold(true);
+    titleCell.getFormat().getFill().setColor("#FFC7CE");
+    titleCell.getFormat().getFont().setColor("#9C0006");
+
+    // Header row
+    const userHeader  = cell(1, 0);
+    const countHeader = cell(1, 1);
+    userHeader.setValue("User");
+    countHeader.setValue("N Count");
+    [userHeader, countHeader].forEach(c => {
+      c.getFormat().getFont().setBold(true);
+      c.getFormat().getFill().setColor("#D9E1F2");
+      c.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
+    });
+
+    // Sort users by descending N count, then alphabetically
+    const sortedUsers = Object.keys(breakdown).sort((a, b) => {
+      const diff = breakdown[b] - breakdown[a];
+      return diff !== 0 ? diff : a.localeCompare(b);
+    });
+
+    if (sortedUsers.length === 0) {
+      const noneCell = cell(2, 0);
+      noneCell.setValue("(none)");
+      noneCell.getFormat().getFont().setItalic(true);
+      noneCell.getFormat().getFont().setColor("#595959");
+      return;
     }
 
-    // STEP 4 — check rotation: archive and reset period columns if at limit
-    let existingHeaders = T_table.getColumns().map(c => c.getName());
-    let periodCount = countPeriodColumns(existingHeaders);
-
-    if (periodCount >= MAX_CHECKS) {
-        archivePeriodColumns(workbook, T_table, today);
-        removePeriodColumns(T_table);
-        console.log(`Period limit reached (${MAX_CHECKS}) — archived and reset for a new cycle.`);
-        existingHeaders = T_table.getColumns().map(c => c.getName());
+    for (let i = 0; i < sortedUsers.length; i++) {
+      const user  = sortedUsers[i];
+      const count = breakdown[user];
+      cell(2 + i, 0).setValue(user);
+      cell(2 + i, 1).setValue(count);
+      cell(2 + i, 1).getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
     }
-
-    // STEP 5 — add any new BLACK/RED stopes not already in the KPI table
-    const idCol = T_table.getColumnByName(BASE_HEADERS[KPI_COL_ID]);
-    const idRange = idCol.getRangeBetweenHeaderAndTotal();
-    const existingIds = new Set<string>();
-    if (idRange.getRowCount() > 0) {
-        const idValues = idRange.getValues();
-        for (const row of idValues) {
-            const v = String(row[0]).trim();
-            if (v) existingIds.add(v);
-        }
-    }
-
-    const newStopes = blackRedIds.filter(id => !existingIds.has(id));
-    if (newStopes.length > 0) {
-        const newRows = newStopes.map(id => buildBaseRow(id));
-        T_table.addRows(-1, newRows);
-
-        // Apply the lookup formulas to the rows just added
-        const dataRange = T_table.getRangeBetweenHeaderAndTotal();
-        const total = dataRange.getRowCount();
-        for (let r = total - newStopes.length; r < total; r++) {
-            applyLookupFormulasToRow(dataRange.getRow(r));
-        }
-        console.log(`Added ${newStopes.length} new stope(s): ${newStopes.join(", ")}`);
-    }
-
-    // STEP 6 — load cache (state and stage order)
-    const stateSheet = getStateSheet();
-    const savedState = readSavedState(stateSheet);
-    const stageOrder = readStageOrder(stateSheet);
-
-    // Build index lookup
-    const stageIdx: { [key: string]: number } = {};
-    stageOrder.forEach((k, i) => { stageIdx[k] = i; });
-
-    // STEP 7 — read current KPI data (after the lookup formulas have calculated)
-    // Force a recalc so the lookup formulas resolve to values we can read
-    T_sheet.getRange("A1").getFormat().setRowHeight(T_sheet.getRange("A1").getFormat().getRowHeight()); // no-op nudge
-
-    const kpiData = T_table.getRangeBetweenHeaderAndTotal();
-    const kpiValues = kpiData.getValues();
-    const kpiRowCount = kpiData.getRowCount();
-
-    // Register any new stage keys discovered in current data
-    let orderChanged = false;
-    for (let i = 0; i < kpiRowCount; i++) {
-        const key = stageKey(String(kpiValues[i][KPI_COL_STAGE]), String(kpiValues[i][KPI_COL_SUB]));
-        if (stageIdx[key] === undefined) {
-            stageIdx[key] = stageOrder.length;
-            stageOrder.push(key);
-            orderChanged = true;
-            console.log(`New stage registered: "${key}"`);
-        }
-    }
-
-    // STEP 8 — evaluate Y/N/? for each row
-    const currentStateList: { id: string; designStage: string; subProcess: string }[] = [];
-    const cellValues: string[][] = [];
-    let passCount = 0;
-
-    for (let i = 0; i < kpiRowCount; i++) {
-        const id = String(kpiValues[i][KPI_COL_ID]).trim();
-        const stage = String(kpiValues[i][KPI_COL_STAGE]).trim();
-        const sub = String(kpiValues[i][KPI_COL_SUB]).trim();
-
-        currentStateList.push({ id, designStage: stage, subProcess: sub });
-
-        const currKey = stageKey(stage, sub);
-        const currI = stageIdx[currKey] ?? -1;
-        const prev = savedState[id];
-
-        if (!prev) {
-            cellValues.push(["?"]);
-            continue;
-        }
-        const prevKey = stageKey(prev.designStage, prev.subProcess);
-        const prevI = stageIdx[prevKey] ?? -1;
-        if (currI === -1 || prevI === -1) {
-            cellValues.push(["?"]);
-            continue;
-        }
-
-        const pass = (currI - prevI) >= MIN_STEPS_FORWARD;
-        cellValues.push([pass ? "Y" : "N"]);
-        if (pass) passCount++;
-    }
-
-    // STEP 9 — generate a unique header for this run (handle same day reruns)
-    let dateHeader = baseHeader;
-    let suffix = 2;
-    const headersNow = T_table.getColumns().map(c => c.getName());
-    while (headersNow.includes(dateHeader)) {
-        dateHeader = `${baseHeader} (${suffix})`;
-        suffix++;
-    }
-
-    // STEP 10 — append the date column with Y/N/? values
-    const dateCol = T_table.addColumn(-1);
-    dateCol.setName(dateHeader);
-    const dateColRange = dateCol.getRangeBetweenHeaderAndTotal();
-    const actualRows = dateColRange.getRowCount();
-
-    while (cellValues.length < actualRows) cellValues.push(["?"]);
-    dateColRange.setValues(cellValues.slice(0, actualRows));
-
-    for (let i = 0; i < actualRows; i++) {
-        const cell = dateColRange.getCell(i, 0);
-        const v = (cellValues[i] ?? ["?"])[0];
-
-        if (v === "Y") {
-            cell.getFormat().getFill().setColor("#C6EFCE");
-            cell.getFormat().getFont().setColor("#276221");
-        } else if (v === "N") {
-            cell.getFormat().getFill().setColor("#FFC7CE");
-            cell.getFormat().getFont().setColor("#9C0006");
-        } else {
-            cell.getFormat().getFill().setColor("#FFEB9C");
-            cell.getFormat().getFont().setColor("#9C5700");
-        }
-        cell.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
-    }
-
-    // STEP 11 — append paired blank Notes column
-    const notesHeader = `${dateHeader} Notes`;
-    const notesCol = T_table.addColumn(-1);
-    notesCol.setName(notesHeader);
-    notesCol.getRangeBetweenHeaderAndTotal().setValues(Array(actualRows).fill([""]));
-
-    // STEP 12 — summary block above the KPI table
-    writeSummaryBlock(T_sheet, SummaryAnchor, kpiRowCount, countBlack, countRed, today);
-
-    // STEP 13 — persist state and stage order
-    writeSavedState(stateSheet, currentStateList);
-    if (orderChanged) writeStageOrder(stateSheet, stageOrder);
-
-    console.log(`Done — "${dateHeader}" added. ${passCount}/${kpiRowCount} passed (delta >= ${MIN_STEPS_FORWARD}). Total=${kpiRowCount} BLACK=${countBlack} RED=${countRed}.`);
-
-    // Helpers scoped to main so they can capture config above
-
-    function buildBaseRow(id: string): (string)[] {
-        // Returns [ID, "", "", "", ""] — formulas applied separately so addRows accepts values
-        return [id, "", "", "", ""];
-    }
-
-    function applyLookupFormulasToRow(rowRange: ExcelScript.Range): void {
-        // Set INDEX/MATCH formulas in columns 2-5 (User, Stage, Sub, Zone) using structured ref
-        const lookups = [
-            buildLookupFormula(IndexOfUser),
-            buildLookupFormula(IndexOfDesignStage),
-            buildLookupFormula(IndexOfSubProcess),
-            buildLookupFormula(IndexOfZoneStatus),
-        ];
-        for (let c = 0; c < lookups.length; c++) {
-            rowRange.getCell(0, c + 1).setFormula(lookups[c]);
-        }
-    }
-
-    function buildLookupFormula(sourceColIdx: number): string {
-        const lookupCol = columnLetterFromIndex(sourceColIdx + 1);
-        const idCol = columnLetterFromIndex(IndexOfIdStope + 1);
-        return `=IFERROR(INDEX('${SourceSheet}'!${lookupCol}:${lookupCol},MATCH([@[${BASE_HEADERS[KPI_COL_ID]}]],'${SourceSheet}'!${idCol}:${idCol},0)),"")`;
-    }
-
-    function countPeriodColumns(headers: string[]): number {
-        return headers.filter(h => !BASE_HEADERS.includes(h) && !h.endsWith(" Notes")).length;
-    }
-
-    function removePeriodColumns(table: ExcelScript.Table): void {
-        // Remove from the right so indices stay stable
-        const cols = table.getColumns();
-        for (let i = cols.length - 1; i >= 0; i--) {
-            const name = cols[i].getName();
-            if (!BASE_HEADERS.includes(name)) {
-                cols[i].delete();
-            }
-        }
-    }
-
-    function archivePeriodColumns(workbook: ExcelScript.Workbook, table: ExcelScript.Table, runDate: Date): void {
-        const dd2 = String(runDate.getDate()).padStart(2, "0");
-        const mm2 = String(runDate.getMonth() + 1).padStart(2, "0");
-        const yyyy2 = runDate.getFullYear();
-        let archiveName = `KPI_Archive_${dd2}-${mm2}-${yyyy2}`;
-        let n = 2;
-        while (workbook.getWorksheet(archiveName)) {
-            archiveName = `KPI_Archive_${dd2}-${mm2}-${yyyy2}_${n}`;
-            n++;
-        }
-
-        const archiveSheet = workbook.addWorksheet(archiveName);
-        const tableRange = table.getRange();
-        const values = tableRange.getValues();
-        if (values.length > 0 && values[0].length > 0) {
-            archiveSheet.getRangeByIndexes(0, 0, values.length, values[0].length).setValues(values);
-        }
-        console.log(`Archived to sheet "${archiveName}".`);
-    }
-
-    function stageKey(designStage: string, subProcess: string): string {
-        return `${designStage.trim()}::${subProcess.trim()}`;
-    }
-
-    function getStateSheet(): ExcelScript.Worksheet {
-        let sheet = workbook.getWorksheet(StateSheetName);
-        if (!sheet) {
-            sheet = workbook.addWorksheet(StateSheetName);
-            sheet.setVisibility(ExcelScript.SheetVisibility.veryHidden);
-            sheet.getRange("A1:C1").setValues([["StopeID", "DesignStage", "SubProcess"]]);
-            sheet.getRange("E1").setValue("StageOrder");
-        }
-        return sheet;
-    }
-
-    function readStageOrder(sheet: ExcelScript.Worksheet): string[] {
-        const used = sheet.getUsedRange();
-        if (!used) return [...SEED_ORDER];
-        const values = used.getValues();
-        const order: string[] = [];
-        for (let i = 1; i < values.length; i++) {
-            const key = values[i][4];
-            if (key !== undefined && key !== null && String(key).trim() !== "") {
-                order.push(String(key).trim());
-            }
-        }
-        return order.length > 0 ? order : [...SEED_ORDER];
-    }
-
-    function writeStageOrder(sheet: ExcelScript.Worksheet, order: string[]): void {
-        sheet.getRange(`E2:E${order.length + 20}`).clear();
-        if (order.length === 0) return;
-        sheet.getRange(`E2:E${1 + order.length}`).setValues(order.map(k => [k]));
-    }
-
-    function readSavedState(sheet: ExcelScript.Worksheet): { [id: string]: { designStage: string; subProcess: string } } {
-        const used = sheet.getUsedRange();
-        if (!used) return {};
-        const values = used.getValues();
-        const state: { [id: string]: { designStage: string; subProcess: string } } = {};
-        for (let i = 1; i < values.length; i++) {
-            const id = String(values[i][0]).trim();
-            const ds = String(values[i][1]).trim();
-            const sp = String(values[i][2]).trim();
-            if (id && id !== "undefined") state[id] = { designStage: ds, subProcess: sp };
-        }
-        return state;
-    }
-
-    function writeSavedState(sheet: ExcelScript.Worksheet, list: { id: string; designStage: string; subProcess: string }[]): void {
-        const used = sheet.getUsedRange();
-        if (used) sheet.getRange(`A2:C${used.getRowCount() + 10}`).clear();
-        if (list.length === 0) return;
-        sheet.getRange(`A2:C${1 + list.length}`).setValues(list.map(s => [s.id, s.designStage, s.subProcess]));
-    }
-
-    function writeSummaryBlock(sheet: ExcelScript.Worksheet, anchor: string, total: number, black: number, red: number, runDate: Date): void {
-        const a = sheet.getRange(anchor);
-        const baseRow = a.getRowIndex();
-        const baseCol = a.getColumnIndex();
-        const cell = (r: number, c: number) => sheet.getCell(baseRow + r, baseCol + c);
-
-        const labels = ["Total Stopes", "BLACK", "RED"];
-        const lblFill = ["#D9E1F2", "#000000", "#FF0000"];
-        const lblFont = ["#000000", "#FFFFFF", "#FFFFFF"];
-        for (let c = 0; c < 3; c++) {
-            const x = cell(0, c);
-            x.setValue(labels[c]);
-            x.getFormat().getFill().setColor(lblFill[c]);
-            x.getFormat().getFont().setColor(lblFont[c]);
-            x.getFormat().getFont().setBold(true);
-            x.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
-        }
-
-        const counts = [total, black, red];
-        const valFill = ["#EBF0FA", "#595959", "#FFE0E0"];
-        const valFont = ["#000000", "#FFFFFF", "#9C0006"];
-        for (let c = 0; c < 3; c++) {
-            const x = cell(1, c);
-            x.setValue(counts[c]);
-            x.getFormat().getFill().setColor(valFill[c]);
-            x.getFormat().getFont().setColor(valFont[c]);
-            x.getFormat().getFont().setBold(true);
-            x.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
-        }
-
-        const ts = cell(2, 0);
-        ts.setValue(`Last updated: ${runDate.toLocaleDateString()} ${runDate.toLocaleTimeString()}`);
-        ts.getFormat().getFont().setItalic(true);
-        ts.getFormat().getFont().setColor("#595959");
-    }
+  }
 }
 
-// Convert a 1 based column number to an Excel column letter (1=A, 27=AA)
+// Convert a 1-based column number to an Excel column letter (1=A, 27=AA)
 function columnLetterFromIndex(colNum: number): string {
-    let letter = "";
-    while (colNum > 0) {
-        const r = (colNum - 1) % 26;
-        letter = String.fromCharCode(65 + r) + letter;
-        colNum = Math.floor((colNum - 1) / 26);
-    }
-    return letter;
+  let letter = "";
+  while (colNum > 0) {
+    const r = (colNum - 1) % 26;
+    letter = String.fromCharCode(65 + r) + letter;
+    colNum = Math.floor((colNum - 1) / 26);
+  }
+  return letter;
 }
 
 // Parse the row number out of an anchor like "A25" -> 25
 function rowFromAnchor(anchor: string): number {
-    const m = anchor.match(/\d+/);
-    return m ? parseInt(m[0], 10) : 1;
+  const m = anchor.match(/\d+/);
+  return m ? parseInt(m[0], 10) : 1;
 }
