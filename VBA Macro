@@ -1,0 +1,208 @@
+Attribute VB_Name = "SaveAndResetKPI"
+'==================================================================
+' SaveAndResetKPI.bas
+'
+' Companion macro to checkStageProgress.ts
+'
+' Saves the current KPI forecast to a timestamped archive sheet and
+' resets the live KPI table back to its 5 base columns so a new
+' forecast cycle can begin.
+'
+' Usage:
+'   1. Open the Excel workbook
+'   2. Press Alt+F11 to open the VBA editor
+'   3. File > Import File... > select this .bas
+'   4. Close the editor
+'   5. View > Macros > select "SaveAndResetKPIForecast" > Run
+'      (or assign to a button on the SchedulerData sheet)
+'==================================================================
+
+Option Explicit
+
+' Configuration — must match the constants in checkStageProgress.ts
+Private Const TARGET_SHEET   As String = "SchedulerData"
+Private Const TARGET_TABLE   As String = "KPI"
+Private Const STATE_SHEET    As String = "_StageStateCache"
+
+'------------------------------------------------------------------
+' Main entry point — archive the current forecast and reset the table
+'------------------------------------------------------------------
+Public Sub SaveAndResetKPIForecast()
+
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim archiveSheet As Worksheet
+    Dim archiveName As String
+    Dim baseHeaders As Variant
+    Dim col As ListColumn
+    Dim i As Long
+    Dim n As Long
+    Dim response As VbMsgBoxResult
+
+    On Error GoTo ErrHandler
+
+    baseHeaders = Array("ID Stope", "User", "Design Stage", "Sub Process", "Zone Status")
+
+    ' Step 1: locate the sheet and table
+    If Not SheetExists(TARGET_SHEET) Then
+        MsgBox "Sheet '" & TARGET_SHEET & "' not found.", vbCritical, "Save and Reset"
+        Exit Sub
+    End If
+
+    Set ws = ThisWorkbook.Worksheets(TARGET_SHEET)
+
+    If Not TableExists(ws, TARGET_TABLE) Then
+        MsgBox "Table '" & TARGET_TABLE & "' not found on sheet '" & TARGET_SHEET & "'.", vbCritical, "Save and Reset"
+        Exit Sub
+    End If
+
+    Set tbl = ws.ListObjects(TARGET_TABLE)
+
+    ' Step 2: confirm with the user — this action is destructive
+    response = MsgBox( _
+        "This will archive the current KPI forecast to a new sheet and " & _
+        "remove all date columns from the live table." & vbCrLf & vbCrLf & _
+        "Continue?", _
+        vbYesNo + vbExclamation, "Save and Reset KPI Forecast")
+
+    If response <> vbYes Then Exit Sub
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+
+    ' Step 3: build a unique archive sheet name
+    archiveName = "KPI_Archive_" & Format(Now, "dd-mm-yyyy")
+    n = 2
+    Do While SheetExists(archiveName)
+        archiveName = "KPI_Archive_" & Format(Now, "dd-mm-yyyy") & "_" & n
+        n = n + 1
+    Loop
+
+    ' Step 4: create the archive sheet at the end of the workbook
+    Set archiveSheet = ThisWorkbook.Worksheets.Add( _
+        After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    archiveSheet.Name = archiveName
+
+    ' Step 5: copy the entire table (values + formatting, no formulas)
+    tbl.Range.Copy
+    archiveSheet.Range("A1").PasteSpecial Paste:=xlPasteValuesAndNumberFormats
+    archiveSheet.Range("A1").PasteSpecial Paste:=xlPasteFormats
+    Application.CutCopyMode = False
+
+    ' Auto fit the archive columns
+    archiveSheet.UsedRange.Columns.AutoFit
+
+    ' Add a footer noting when the archive was taken
+    Dim footerRow As Long
+    footerRow = archiveSheet.UsedRange.Rows.Count + 2
+    archiveSheet.Cells(footerRow, 1).Value = "Archived: " & Format(Now, "dd-mm-yyyy hh:nn:ss")
+    archiveSheet.Cells(footerRow, 1).Font.Italic = True
+    archiveSheet.Cells(footerRow, 1).Font.ColorIndex = 16
+
+    ' Step 6: remove all non base columns from the live KPI table
+    '         iterate right to left so column indices stay stable
+    For i = tbl.ListColumns.Count To 1 Step -1
+        Set col = tbl.ListColumns(i)
+        If Not IsInArray(col.Name, baseHeaders) Then
+            col.Delete
+        End If
+    Next i
+
+    ' Step 7: clear the per user breakdown block (rows 5+ at column A)
+    '         the summary block at A1:C3 is left untouched
+    ws.Range("A5:B200").ClearContents
+    ws.Range("A5:B200").Interior.ColorIndex = xlNone
+    ws.Range("A5:B200").Font.Bold = False
+    ws.Range("A5:B200").Font.Italic = False
+    ws.Range("A5:B200").Font.ColorIndex = xlAutomatic
+
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+
+    MsgBox "Forecast archived to '" & archiveName & "'." & vbCrLf & _
+           "KPI table reset to base columns. Ready for next cycle.", _
+           vbInformation, "Save and Reset"
+
+    Exit Sub
+
+ErrHandler:
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    Application.CutCopyMode = False
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbCritical, "Save and Reset"
+End Sub
+
+
+' also clear the hidden state cache so the next run
+' treats every stope as "new" again.
+
+Public Sub ResetStageStateCache()
+
+    Dim response As VbMsgBoxResult
+    Dim sheet As Worksheet
+
+    response = MsgBox( _
+        "Clear the hidden stage state cache?" & vbCrLf & vbCrLf & _
+        "All stopes will be marked 'new' on the next script run.", _
+        vbYesNo + vbExclamation, "Reset State Cache")
+
+    If response <> vbYes Then Exit Sub
+
+    If Not SheetExists(STATE_SHEET) Then
+        MsgBox "State cache sheet '" & STATE_SHEET & "' does not exist — nothing to reset.", _
+               vbInformation, "Reset State Cache"
+        Exit Sub
+    End If
+
+    Set sheet = ThisWorkbook.Worksheets(STATE_SHEET)
+
+    ' Make the sheet temporarily visible so we can edit it
+    Dim originalVisibility As XlSheetVisibility
+    originalVisibility = sheet.Visible
+    sheet.Visible = xlSheetVisible
+
+    ' Clear stope state (columns A-C below the header) but keep stage order (column E)
+    Dim lastRow As Long
+    lastRow = sheet.Cells(sheet.Rows.Count, 1).End(xlUp).Row
+    If lastRow > 1 Then
+        sheet.Range("A2:C" & lastRow).ClearContents
+    End If
+
+    ' Re-hide
+    sheet.Visible = originalVisibility
+
+    MsgBox "Stope state cache cleared. Stage order preserved.", vbInformation, "Reset State Cache"
+End Sub
+
+' FUNCTIONS
+
+
+' Check whether a worksheet with the given name exists in this workbook
+Private Function SheetExists(sheetName As String) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(sheetName)
+    SheetExists = Not ws Is Nothing
+    On Error GoTo 0
+End Function
+
+' Check whether a named ListObject (table) exists on a given worksheet
+Private Function TableExists(ws As Worksheet, tblName As String) As Boolean
+    Dim lo As ListObject
+    On Error Resume Next
+    Set lo = ws.ListObjects(tblName)
+    TableExists = Not lo Is Nothing
+    On Error GoTo 0
+End Function
+
+' Case-insensitive lookup for a string in a 1-D array
+Private Function IsInArray(val As Variant, arr As Variant) As Boolean
+    Dim i As Long
+    For i = LBound(arr) To UBound(arr)
+        If LCase$(CStr(arr(i))) = LCase$(CStr(val)) Then
+            IsInArray = True
+            Exit Function
+        End If
+    Next i
+    IsInArray = False
+End Function
