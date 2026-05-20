@@ -541,6 +541,8 @@ predo put in buckets...
 Future functionality
 engineers #of non progressions
 
+Line 123: Cannot read properties of undefined (reading 'getRangeBetweenHeaderAndTotal')
+
 
 
 ## Summary of Files Created and Maintained
